@@ -1,0 +1,6 @@
+{
+  "name": "Firm Expo Social Campaign Manager",
+  "description": "Enterprise Instagram & Facebook campaign management, automated scheduling, and Meta Graph API analytics for global exhibitions and brands.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

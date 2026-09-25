@@ -1,0 +1,656 @@
+// Prisma Schema for Firm Expo Social Media Campaign Management Platform
+// Multi-tenant architecture with PostgreSQL
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  CAMPAIGN_MANAGER
+  CONTENT_CREATOR
+  ANALYST
+}
+
+enum PlatformType {
+  FACEBOOK
+  INSTAGRAM
+}
+
+enum AccountType {
+  PAGE
+  BUSINESS
+  CREATOR
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  PAUSED
+  FAILED
+  ARCHIVED
+}
+
+enum CampaignObjective {
+  BRAND_AWARENESS
+  EVENT_PROMOTION
+  PRODUCT_LAUNCH
+  LEAD_GENERATION
+  WEBSITE_TRAFFIC
+  COMMUNITY_ENGAGEMENT
+  COMPANY_ANNOUNCEMENT
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+enum PostFormat {
+  INSTAGRAM_FEED
+  INSTAGRAM_REEL
+  INSTAGRAM_STORY
+  FACEBOOK_POST
+  FACEBOOK_STORY
+  FACEBOOK_REEL
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  CAROUSEL
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  RETRYING
+}
+
+model User {
+  id            String            @id @default(cuid())
+  email         String            @unique
+  name          String
+  avatarUrl     String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  memberships   WorkspaceMember[]
+  createdPosts  Post[]            @relation("PostCreator")
+  approvals     Approval[]        @relation("Approver")
+  auditLogs     AuditLog[]
+  notifications Notification[]
+
+  @@map("users")
+}
+
+model Workspace {
+  id             String            @id @default(cuid())
+  name           String
+  slug           String            @unique
+  plan           String            @default("Enterprise Exhibition")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  members        WorkspaceMember[]
+  socialAccounts SocialAccount[]
+  campaigns      Campaign[]
+  mediaAssets    PostMedia[]
+  auditLogs      AuditLog[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        Role      @default(CONTENT_CREATOR)
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@map("workspace_members")
+}
+
+model SocialAccount {
+  id              String           @id @default(cuid())
+  workspaceId     String
+  platform        PlatformType
+  externalId      String           @unique
+  name            String
+  username        String
+  avatarUrl       String?
+  accountType     AccountType
+  followersCount  Int              @default(0)
+  isConnected     Boolean          @default(true)
+  lastSyncedAt    DateTime         @default(now())
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  credential      OAuthCredential?
+  posts           Post[]
+  conversations   Conversation[]
+  comments        Comment[]
+
+  @@index([workspaceId, platform])
+  @@map("social_accounts")
+}
+
+model OAuthCredential {
+  id                  String        @id @default(cuid())
+  socialAccountId     String        @unique
+  encryptedToken      String        // AES-256 encrypted at rest
+  tokenType           String        @default("Bearer")
+  scopes              String[]
+  expiresAt           DateTime
+  refreshToken        String?
+  refreshExpiresAt    DateTime?
+  metaAppId           String
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  socialAccount       SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@map("oauth_credentials")
+}
+
+model Campaign {
+  id                  String             @id @default(cuid())
+  workspaceId         String
+  name                String
+  description         String?
+  objective           CampaignObjective  @default(BRAND_AWARENESS)
+  status              CampaignStatus     @default(DRAFT)
+  firmExpoEventId     String?            // Linking to Firm Expo exhibition
+  firmExpoEventName   String?
+  startDate           DateTime
+  endDate             DateTime?
+  budgetTotal         Decimal?           @db.Decimal(10, 2)
+  budgetSpent         Decimal?           @db.Decimal(10, 2)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  workspace           Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  platforms           CampaignPlatform[]
+  posts               Post[]
+
+  @@index([workspaceId, status])
+  @@map("campaigns")
+}
+
+model CampaignPlatform {
+  id         String       @id @default(cuid())
+  campaignId String
+  platform   PlatformType
+  campaign   Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, platform])
+  @@map("campaign_platforms")
+}
+
+model Post {
+  id              String               @id @default(cuid())
+  campaignId      String
+  socialAccountId String
+  creatorId       String
+  format          PostFormat
+  caption         String               @db.Text
+  firstComment    String?              @db.Text
+  status          PostStatus           @default(DRAFT)
+  scheduledAt     DateTime
+  publishedAt     DateTime?
+  externalPostId  String?              // Meta Graph API Post or Container ID
+  permalink       String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  campaign        Campaign             @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  socialAccount   SocialAccount        @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  creator         User                 @relation("PostCreator", fields: [creatorId], references: [id])
+  media           PostMedia[]
+  scheduledJobs   ScheduledJob[]
+  publishAttempts PublishingAttempt[]
+  insights        PostInsight[]
+  approvals       Approval[]
+
+  @@index([campaignId])
+  @@index([socialAccountId, scheduledAt])
+  @@index([status])
+  @@map("posts")
+}
+
+model PostMedia {
+  id          String     @id @default(cuid())
+  workspaceId String
+  postId      String?
+  url         String
+  type        MediaType  @default(IMAGE)
+  aspectRatio String     @default("1:1")
+  fileSizeMb  Float
+  altText     String?
+  width       Int?
+  height      Int?
+  createdAt   DateTime   @default(now())
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  post        Post?      @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@map("post_media")
+}
+
+model ScheduledJob {
+  id             String     @id @default(cuid())
+  postId         String
+  jobQueueId     String     // BullMQ job reference
+  executeAt      DateTime
+  status         JobStatus  @default(QUEUED)
+  attemptsCount  Int        @default(0)
+  maxAttempts    Int        @default(5)
+  lastError      String?    @db.Text
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  post           Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([status, executeAt])
+  @@map("scheduled_jobs")
+}
+
+model PublishingAttempt {
+  id            String    @id @default(cuid())
+  postId        String
+  attemptNumber Int
+  status        String    // SUCCESS or FAILED
+  requestPayload Json?
+  responseBody  Json?
+  errorCode     String?
+  errorMessage  String?   @db.Text
+  attemptedAt   DateTime  @default(now())
+  post          Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@map("publishing_attempts")
+}
+
+model PostInsight {
+  id          String   @id @default(cuid())
+  postId      String
+  reach       Int      @default(0)
+  impressions Int      @default(0)
+  engagement  Int      @default(0)
+  likes       Int      @default(0)
+  comments    Int      @default(0)
+  shares      Int      @default(0)
+  saves       Int      @default(0)
+  clicks      Int      @default(0)
+  syncedAt    DateTime @default(now())
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@map("post_insights")
+}
+
+model Conversation {
+  id              String         @id @default(cuid())
+  socialAccountId String
+  externalId      String         @unique
+  participantName String
+  participantId   String
+  unreadCount     Int            @default(0)
+  isResolved      Boolean        @default(false)
+  sentiment       String         @default("neutral")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  socialAccount   SocialAccount  @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  messages        Message[]
+
+  @@index([socialAccountId, isResolved])
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  externalId     String?
+  senderType     String       // CUSTOMER, AGENT, BOT
+  senderId       String
+  body           String       @db.Text
+  attachments    String[]
+  sentAt         DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, sentAt])
+  @@map("messages")
+}
+
+model Comment {
+  id              String        @id @default(cuid())
+  socialAccountId String
+  externalPostId  String
+  externalId      String        @unique
+  authorName      String
+  authorId        String
+  text            String        @db.Text
+  sentiment       String        @default("neutral")
+  isResolved      Boolean       @default(false)
+  replyCount      Int           @default(0)
+  postedAt        DateTime
+  createdAt       DateTime      @default(now())
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@index([socialAccountId])
+  @@map("comments")
+}
+
+model Approval {
+  id           String         @id @default(cuid())
+  postId       String
+  reviewerId   String
+  status       ApprovalStatus @default(PENDING)
+  notes        String?        @db.Text
+  reviewedAt   DateTime?
+  createdAt    DateTime       @default(now())
+  post         Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reviewer     User           @relation("Approver", fields: [reviewerId], references: [id])
+
+  @@index([postId])
+  @@map("approvals")
+}
+
+model AuditLog {
+  id          String     @id @default(cuid())
+  workspaceId String
+  userId      String?
+  action      String     // e.g., CAMPAIGN_CREATED, ACCOUNT_CONNECTED, POST_PUBLISHED
+  entityType  String     // CAMPAIGN, POST, ACCOUNT, SETTINGS
+  entityId    String
+  details     Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime   @default(now())
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  type      String   // PUBLISH_SUCCESS, PUBLISH_FAILED, APPROVAL_REQUEST, TOKEN_EXPIRING
+  read      Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@map("notifications")
+}
+
+// ==========================================
+// DM Campaign Management Models
+// ==========================================
+
+enum EligibilityState {
+  ELIGIBLE
+  WINDOW_EXPIRED
+  OPTED_OUT
+  MISSING_CONSENT
+  UNSUPPORTED_PLATFORM
+}
+
+enum OptInSourceType {
+  USER_INITIATED_DM
+  STORY_REPLY
+  EVENT_REGISTRATION_OPTIN
+  QR_CODE_EXPO_OPTIN
+  CUSTOMER_SUPPORT
+}
+
+enum DMCampaignStatusType {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+model Contact {
+  id                  String             @id @default(cuid())
+  workspaceId         String
+  platform            PlatformType
+  platformRecipientId String             // IGSID or PSID
+  socialAccountId     String
+  displayName         String
+  username            String
+  avatarUrl           String?
+  conversationId      String?
+  firstInteractionAt  DateTime           @default(now())
+  lastInteractionAt   DateTime           @default(now())
+  windowExpiresAt     DateTime
+  eligibilityStatus   EligibilityState   @default(ELIGIBLE)
+  optInSource         OptInSourceType    @default(USER_INITIATED_DM)
+  optInTimestamp      DateTime           @default(now())
+  isOptedOut          Boolean            @default(false)
+  assignedTo          String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  tags                ContactTag[]
+  consents            ContactConsent[]
+  campaignRecipients  CampaignRecipient[]
+
+  @@unique([workspaceId, platform, platformRecipientId])
+  @@index([socialAccountId, eligibilityStatus])
+  @@map("contacts")
+}
+
+model ContactConsent {
+  id          String          @id @default(cuid())
+  contactId   String
+  source      OptInSourceType
+  consentText String?         @db.Text
+  ipAddress   String?
+  verifiedAt  DateTime        @default(now())
+  contact     Contact         @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+  @@map("contact_consents")
+}
+
+model ContactTag {
+  id        String   @id @default(cuid())
+  contactId String
+  tagName   String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, tagName])
+  @@map("contact_tags")
+}
+
+model AudienceSegment {
+  id                    String        @id @default(cuid())
+  workspaceId           String
+  name                  String
+  description           String?       @db.Text
+  platform              PlatformType?
+  filters               Json
+  totalContactsCount    Int           @default(0)
+  eligibleContactsCount Int           @default(0)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  campaigns             DMCampaign[]
+
+  @@index([workspaceId])
+  @@map("audience_segments")
+}
+
+model MessageTemplate {
+  id                 String         @id @default(cuid())
+  workspaceId        String
+  name               String
+  platform           PlatformType?
+  purpose            String
+  category           String
+  body               String         @db.Text
+  supportedVariables String[]
+  approvalStatus     ApprovalStatus @default(DRAFT)
+  createdByUserId    String
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  campaigns          DMCampaign[]
+
+  @@index([workspaceId])
+  @@map("message_templates")
+}
+
+model DMCampaign {
+  id                 String               @id @default(cuid())
+  workspaceId        String
+  name               String
+  description        String?              @db.Text
+  objective          String
+  firmExpoEventId    String?
+  firmExpoEventName  String?
+  platform           PlatformType
+  socialAccountId    String
+  audienceSegmentId  String
+  templateId         String?
+  messageBody        String               @db.Text
+  variables          Json?
+  status             DMCampaignStatusType @default(DRAFT)
+  scheduledAt        DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdByUserId    String
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  audienceSegment    AudienceSegment      @relation(fields: [audienceSegmentId], references: [id])
+  template           MessageTemplate?     @relation(fields: [templateId], references: [id])
+  recipients         CampaignRecipient[]
+  scheduledMessages  ScheduledMessage[]
+  approvals          CampaignApproval[]
+  complianceChecks   ComplianceCheck[]
+
+  @@index([workspaceId, status])
+  @@map("dm_campaigns")
+}
+
+model CampaignRecipient {
+  id           String     @id @default(cuid())
+  campaignId   String
+  contactId    String
+  status       String     // QUEUED, DELIVERED, FAILED, EXCLUDED_WINDOW, EXCLUDED_OPT_OUT
+  errorMessage String?    @db.Text
+  attemptedAt  DateTime?
+  campaign     DMCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact      Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+  @@map("campaign_recipients")
+}
+
+model ScheduledMessage {
+  id                    String     @id @default(cuid())
+  campaignId            String
+  contactId             String
+  platform              PlatformType
+  renderedBody          String     @db.Text
+  scheduledFor          DateTime
+  status                String     // PENDING, DISPATCHED, CANCELLED, FAILED
+  eligibilityRechecked  Boolean    @default(false)
+  eligibilityPassed     Boolean    @default(true)
+  failureReason         String?    @db.Text
+  idempotencyKey        String     @unique
+  dispatchedAt          DateTime?
+  createdAt             DateTime   @default(now())
+  campaign              DMCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([scheduledFor, status])
+  @@map("scheduled_messages")
+}
+
+model CampaignApproval {
+  id          String         @id @default(cuid())
+  campaignId  String
+  reviewerId  String
+  status      ApprovalStatus @default(PENDING)
+  notes       String?        @db.Text
+  reviewedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  campaign    DMCampaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@map("campaign_approvals")
+}
+
+model OptOut {
+  id                      String       @id @default(cuid())
+  workspaceId             String
+  platform                PlatformType
+  recipientIdentifier     String
+  displayName             String?
+  reason                  String
+  recordedBy              String
+  campaignsSuppressedCount Int         @default(0)
+  optedOutAt              DateTime     @default(now())
+
+  @@unique([workspaceId, platform, recipientIdentifier])
+  @@map("opt_outs")
+}
+
+model ComplianceCheck {
+  id          String     @id @default(cuid())
+  campaignId  String
+  ruleName    String
+  passed      Boolean
+  details     String?    @db.Text
+  checkedAt   DateTime   @default(now())
+  campaign    DMCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@map("compliance_checks")
+}
+
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  platform    PlatformType
+  eventType   String
+  payload     Json
+  signature   String
+  isVerified  Boolean  @default(false)
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([eventType, createdAt])
+  @@map("webhook_events")
+}
+

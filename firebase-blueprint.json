@@ -1,0 +1,467 @@
+{
+  "entities": {
+    "admin": {
+      "title": "Admin",
+      "description": "Designates an authenticated user as a system administrator",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "description": "Admin email address",
+          "maxLength": 256
+        },
+        "role": {
+          "type": "string",
+          "description": "Administrative role name",
+          "enum": ["owner", "admin"]
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when admin status was provisioned"
+        }
+      },
+      "required": ["userId", "email", "role"]
+    },
+    "campaign": {
+      "title": "Campaign",
+      "description": "Social media marketing campaign for exhibitions and brands",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the campaign",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the campaign owner",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "Associated workspace ID",
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "description": "Campaign title or display name",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description or strategic brief",
+          "maxLength": 2000
+        },
+        "objective": {
+          "type": "string",
+          "description": "Marketing target objective",
+          "enum": [
+            "brand_awareness",
+            "event_promotion",
+            "product_launch",
+            "lead_generation",
+            "website_traffic",
+            "community_engagement",
+            "company_announcement"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "description": "Operational campaign lifecycle status",
+          "enum": ["draft", "scheduled", "publishing", "published", "paused", "failed", "archived"]
+        },
+        "firmExpoEventId": {
+          "type": "string",
+          "description": "Optional exhibition event identifier",
+          "maxLength": 64
+        },
+        "firmExpoEventName": {
+          "type": "string",
+          "description": "Optional exhibition event name",
+          "maxLength": 150
+        },
+        "startDate": {
+          "type": "string",
+          "description": "Campaign scheduled start date"
+        },
+        "endDate": {
+          "type": "string",
+          "description": "Optional scheduled conclusion date"
+        },
+        "lastUpdated": {
+          "type": "string",
+          "description": "Timestamp of most recent update"
+        },
+        "postCount": {
+          "type": "number",
+          "description": "Number of social posts linked to this campaign"
+        }
+      },
+      "required": ["id", "ownerId", "name", "objective", "status"]
+    },
+    "post": {
+      "title": "Post",
+      "description": "Scheduled or published social media post for Instagram or Facebook",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the post",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the author",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "campaignId": {
+          "type": "string",
+          "description": "Associated parent campaign ID",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "campaignName": {
+          "type": "string",
+          "description": "Name of the parent campaign",
+          "maxLength": 200
+        },
+        "socialAccountId": {
+          "type": "string",
+          "description": "Target social account ID",
+          "maxLength": 128
+        },
+        "platform": {
+          "type": "string",
+          "description": "Target social platform",
+          "enum": ["facebook", "instagram"]
+        },
+        "format": {
+          "type": "string",
+          "description": "Format variant on Meta platform",
+          "enum": [
+            "instagram_feed",
+            "instagram_reel",
+            "instagram_story",
+            "facebook_post",
+            "facebook_story",
+            "facebook_reel"
+          ]
+        },
+        "caption": {
+          "type": "string",
+          "description": "Post caption copy",
+          "maxLength": 5000
+        },
+        "firstComment": {
+          "type": "string",
+          "description": "Optional first comment (e.g. hashtags)",
+          "maxLength": 2000
+        },
+        "scheduledAt": {
+          "type": "string",
+          "description": "ISO timestamp for scheduled publication"
+        },
+        "publishedAt": {
+          "type": "string",
+          "description": "ISO timestamp when published successfully"
+        },
+        "status": {
+          "type": "string",
+          "description": "Current post status",
+          "enum": ["draft", "scheduled", "publishing", "published", "failed"]
+        },
+        "externalPostId": {
+          "type": "string",
+          "description": "Meta Graph API external object ID",
+          "maxLength": 128
+        },
+        "failureReason": {
+          "type": "string",
+          "description": "Error details if publication failed",
+          "maxLength": 1000
+        }
+      },
+      "required": ["id", "ownerId", "campaignId", "platform", "format", "status", "scheduledAt"]
+    },
+    "socialAccount": {
+      "title": "SocialAccount",
+      "description": "Connected Meta Page or Instagram Professional account",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Account internal ID",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID who connected this account",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "platform": {
+          "type": "string",
+          "description": "Social network platform",
+          "enum": ["facebook", "instagram"]
+        },
+        "externalId": {
+          "type": "string",
+          "description": "Meta Page ID or IG Business ID",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "Page or account display name",
+          "maxLength": 150
+        },
+        "username": {
+          "type": "string",
+          "description": "Account handle or slug",
+          "maxLength": 100
+        },
+        "avatarUrl": {
+          "type": "string",
+          "description": "Avatar image URI",
+          "maxLength": 1000
+        },
+        "accountType": {
+          "type": "string",
+          "description": "Account classification",
+          "enum": ["page", "business", "creator"]
+        },
+        "followersCount": {
+          "type": "number",
+          "description": "Audience follower count"
+        },
+        "isConnected": {
+          "type": "boolean",
+          "description": "Active connection state flag"
+        },
+        "tokenExpiresAt": {
+          "type": "string",
+          "description": "OAuth token expiration timestamp"
+        },
+        "lastSyncedAt": {
+          "type": "string",
+          "description": "Last synchronization timestamp"
+        },
+        "status": {
+          "type": "string",
+          "description": "Authorization token status",
+          "enum": ["active", "token_expiring", "token_expired", "permissions_missing"]
+        },
+        "errorDetails": {
+          "type": "string",
+          "description": "Connection issue summary",
+          "maxLength": 500
+        }
+      },
+      "required": ["id", "ownerId", "platform", "name", "username", "status"]
+    },
+    "mediaAsset": {
+      "title": "MediaAsset",
+      "description": "Visual creative stored for social publishing",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Media asset unique identifier",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID who uploaded this asset",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Asset file name or label",
+          "maxLength": 200
+        },
+        "url": {
+          "type": "string",
+          "description": "Image or video resource URL",
+          "maxLength": 1000
+        },
+        "type": {
+          "type": "string",
+          "description": "Asset media type",
+          "enum": ["image", "video"]
+        },
+        "sizeMb": {
+          "type": "number",
+          "description": "File size in megabytes"
+        },
+        "aspectRatio": {
+          "type": "string",
+          "description": "Aspect ratio dimension classification",
+          "enum": ["1:1", "4:5", "4:3", "16:9", "9:16"]
+        },
+        "uploadedAt": {
+          "type": "string",
+          "description": "Timestamp when creative was uploaded"
+        },
+        "usageCount": {
+          "type": "number",
+          "description": "Number of times attached to posts"
+        }
+      },
+      "required": ["id", "ownerId", "name", "url", "type", "uploadedAt"]
+    },
+    "conversation": {
+      "title": "Conversation",
+      "description": "Social unified inbox conversation thread",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Conversation thread ID",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of managing agent or owner",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "platform": {
+          "type": "string",
+          "description": "Source platform of message thread",
+          "enum": ["facebook", "instagram"]
+        },
+        "accountId": {
+          "type": "string",
+          "description": "Target managed account ID",
+          "maxLength": 128
+        },
+        "contactName": {
+          "type": "string",
+          "description": "Name of visitor or customer",
+          "maxLength": 150
+        },
+        "contactUsername": {
+          "type": "string",
+          "description": "Handle of customer",
+          "maxLength": 100
+        },
+        "contactAvatar": {
+          "type": "string",
+          "description": "Customer avatar image URL",
+          "maxLength": 1000
+        },
+        "lastMessageSnippet": {
+          "type": "string",
+          "description": "Preview snippet of last message",
+          "maxLength": 500
+        },
+        "lastMessageAt": {
+          "type": "string",
+          "description": "Timestamp of most recent message"
+        },
+        "unreadCount": {
+          "type": "number",
+          "description": "Count of unread messages"
+        },
+        "isResolved": {
+          "type": "boolean",
+          "description": "Resolution status flag"
+        },
+        "sentiment": {
+          "type": "string",
+          "description": "Analyzed customer message sentiment",
+          "enum": ["positive", "neutral", "negative", "urgent"]
+        }
+      },
+      "required": ["id", "ownerId", "platform", "contactName", "isResolved"]
+    },
+    "auditLog": {
+      "title": "AuditLog",
+      "description": "Immutable security and action audit entry",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Log entry identifier",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the actor",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO timestamp of event occurrence"
+        },
+        "action": {
+          "type": "string",
+          "description": "Action descriptor string",
+          "maxLength": 100
+        },
+        "targetType": {
+          "type": "string",
+          "description": "Target entity category",
+          "maxLength": 50
+        },
+        "targetName": {
+          "type": "string",
+          "description": "Human readable name of targeted resource",
+          "maxLength": 200
+        },
+        "details": {
+          "type": "string",
+          "description": "Extended event information or context",
+          "maxLength": 1000
+        }
+      },
+      "required": ["id", "ownerId", "timestamp", "action", "targetType"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": "admin",
+      "description": "System administrator directory"
+    },
+    "/campaigns/{campaignId}": {
+      "schema": "campaign",
+      "description": "Firm Expo exhibition marketing and social campaigns"
+    },
+    "/posts/{postId}": {
+      "schema": "post",
+      "description": "Scheduled and published Instagram and Facebook posts"
+    },
+    "/socialAccounts/{accountId}": {
+      "schema": "socialAccount",
+      "description": "Connected Meta Pages and Instagram Professional accounts"
+    },
+    "/mediaAssets/{assetId}": {
+      "schema": "mediaAsset",
+      "description": "Digital media asset library for creative distribution"
+    },
+    "/conversations/{conversationId}": {
+      "schema": "conversation",
+      "description": "Social customer direct messaging and post comment threads"
+    },
+    "/auditLogs/{logId}": {
+      "schema": "auditLog",
+      "description": "Operational and security audit trail records"
+    }
+  }
+}

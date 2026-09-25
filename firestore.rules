@@ -1,0 +1,234 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Default-Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable Hardened Security Primitives
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && (request.auth.token.email_verified == true || request.auth.token.email == 'firmexpocarnival@gmail.com');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'firmexpocarnival@gmail.com' && request.auth.token.email_verified == true) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Entity Validation Blueprints
+    function isValidCampaign(data) {
+      return data.keys().hasAll(['id', 'ownerId', 'name', 'objective', 'status']) &&
+        data.id is string && isValidId(data.id) &&
+        data.ownerId is string && isValidId(data.ownerId) &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+        data.objective in ['brand_awareness', 'event_promotion', 'product_launch', 'lead_generation', 'website_traffic', 'community_engagement', 'company_announcement'] &&
+        data.status in ['draft', 'scheduled', 'publishing', 'published', 'paused', 'failed', 'archived'] &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 2000)) &&
+        (!('workspaceId' in data) || (data.workspaceId is string && data.workspaceId.size() <= 64)) &&
+        (!('firmExpoEventId' in data) || (data.firmExpoEventId is string && data.firmExpoEventId.size() <= 64)) &&
+        (!('firmExpoEventName' in data) || (data.firmExpoEventName is string && data.firmExpoEventName.size() <= 150));
+    }
+
+    function isValidPost(data) {
+      return data.keys().hasAll(['id', 'ownerId', 'campaignId', 'platform', 'format', 'status', 'scheduledAt']) &&
+        data.id is string && isValidId(data.id) &&
+        data.ownerId is string && isValidId(data.ownerId) &&
+        data.campaignId is string && isValidId(data.campaignId) &&
+        data.platform in ['facebook', 'instagram'] &&
+        data.format in ['instagram_feed', 'instagram_reel', 'instagram_story', 'facebook_post', 'facebook_story', 'facebook_reel'] &&
+        data.status in ['draft', 'scheduled', 'publishing', 'published', 'failed'] &&
+        data.scheduledAt is string && data.scheduledAt.size() <= 64 &&
+        (!('caption' in data) || (data.caption is string && data.caption.size() <= 5000)) &&
+        (!('firstComment' in data) || (data.firstComment is string && data.firstComment.size() <= 2000)) &&
+        (!('failureReason' in data) || (data.failureReason is string && data.failureReason.size() <= 1000));
+    }
+
+    function isValidSocialAccount(data) {
+      return data.keys().hasAll(['id', 'ownerId', 'platform', 'name', 'username', 'status']) &&
+        data.id is string && isValidId(data.id) &&
+        data.ownerId is string && isValidId(data.ownerId) &&
+        data.platform in ['facebook', 'instagram'] &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 150 &&
+        data.username is string && data.username.size() > 0 && data.username.size() <= 100 &&
+        data.status in ['active', 'token_expiring', 'token_expired', 'permissions_missing'] &&
+        (!('accountType' in data) || data.accountType in ['page', 'business', 'creator']) &&
+        (!('errorDetails' in data) || (data.errorDetails is string && data.errorDetails.size() <= 500));
+    }
+
+    function isValidMediaAsset(data) {
+      return data.keys().hasAll(['id', 'ownerId', 'name', 'url', 'type', 'uploadedAt']) &&
+        data.id is string && isValidId(data.id) &&
+        data.ownerId is string && isValidId(data.ownerId) &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+        data.url is string && data.url.size() <= 1000 &&
+        data.type in ['image', 'video'] &&
+        data.uploadedAt is string && data.uploadedAt.size() <= 64;
+    }
+
+    function isValidConversation(data) {
+      return data.keys().hasAll(['id', 'ownerId', 'platform', 'contactName', 'isResolved']) &&
+        data.id is string && isValidId(data.id) &&
+        data.ownerId is string && isValidId(data.ownerId) &&
+        data.platform in ['facebook', 'instagram'] &&
+        data.contactName is string && data.contactName.size() > 0 && data.contactName.size() <= 150 &&
+        data.isResolved is bool &&
+        (!('lastMessageSnippet' in data) || (data.lastMessageSnippet is string && data.lastMessageSnippet.size() <= 500));
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['id', 'ownerId', 'timestamp', 'action', 'targetType']) &&
+        data.id is string && isValidId(data.id) &&
+        data.ownerId is string && isValidId(data.ownerId) &&
+        data.timestamp is string && data.timestamp.size() <= 64 &&
+        data.action is string && data.action.size() <= 100 &&
+        data.targetType is string && data.targetType.size() <= 50 &&
+        (!('targetName' in data) || (data.targetName is string && data.targetName.size() <= 200)) &&
+        (!('details' in data) || (data.details is string && data.details.size() <= 1000));
+    }
+
+    // Connection testing endpoint
+    match /test/{testId} {
+      allow read: if true;
+    }
+
+    // Admins Directory
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && (request.auth.uid == adminId || isAdmin());
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Campaigns Collection
+    match /campaigns/{campaignId} {
+      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidId(campaignId) &&
+        incoming().ownerId == request.auth.uid &&
+        isValidCampaign(incoming());
+      allow update: if isVerified() && isValidId(campaignId) &&
+        isValidCampaign(incoming()) &&
+        (isAdmin() || (
+          existing().ownerId == request.auth.uid &&
+          incoming().ownerId == existing().ownerId &&
+          existing().status != 'archived' &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'description', 'objective', 'status', 'firmExpoEventId',
+            'firmExpoEventName', 'startDate', 'endDate', 'lastUpdated', 'postCount'
+          ])
+        ));
+      allow delete: if isVerified() && isValidId(campaignId) &&
+        (isAdmin() || (existing().ownerId == request.auth.uid && existing().status != 'published'));
+    }
+
+    // Posts Collection
+    match /posts/{postId} {
+      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidId(postId) &&
+        incoming().ownerId == request.auth.uid &&
+        isValidPost(incoming());
+      allow update: if isVerified() && isValidId(postId) &&
+        isValidPost(incoming()) &&
+        (isAdmin() || (
+          existing().ownerId == request.auth.uid &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().campaignId == existing().campaignId &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'caption', 'firstComment', 'scheduledAt', 'publishedAt', 'status',
+            'externalPostId', 'failureReason', 'media', 'metrics', 'retryCount', 'campaignName'
+          ])
+        ));
+      allow delete: if isVerified() && isValidId(postId) &&
+        (isAdmin() || existing().ownerId == request.auth.uid);
+    }
+
+    // Social Accounts Collection
+    match /socialAccounts/{accountId} {
+      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidId(accountId) &&
+        incoming().ownerId == request.auth.uid &&
+        isValidSocialAccount(incoming());
+      allow update: if isVerified() && isValidId(accountId) &&
+        isValidSocialAccount(incoming()) &&
+        (isAdmin() || (
+          existing().ownerId == request.auth.uid &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'isConnected', 'status', 'tokenExpiresAt', 'lastSyncedAt',
+            'followersCount', 'likesCount', 'errorDetails', 'permissions', 'avatarUrl', 'name'
+          ])
+        ));
+      allow delete: if isVerified() && isValidId(accountId) &&
+        (isAdmin() || existing().ownerId == request.auth.uid);
+    }
+
+    // Media Assets Collection
+    match /mediaAssets/{assetId} {
+      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidId(assetId) &&
+        incoming().ownerId == request.auth.uid &&
+        isValidMediaAsset(incoming());
+      allow update: if isVerified() && isValidId(assetId) &&
+        isValidMediaAsset(incoming()) &&
+        (isAdmin() || (
+          existing().ownerId == request.auth.uid &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'usageCount', 'tags'])
+        ));
+      allow delete: if isVerified() && isValidId(assetId) &&
+        (isAdmin() || existing().ownerId == request.auth.uid);
+    }
+
+    // Conversations Collection
+    match /conversations/{conversationId} {
+      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidId(conversationId) &&
+        incoming().ownerId == request.auth.uid &&
+        isValidConversation(incoming());
+      allow update: if isVerified() && isValidId(conversationId) &&
+        isValidConversation(incoming()) &&
+        (isAdmin() || (
+          existing().ownerId == request.auth.uid &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'isResolved', 'unreadCount', 'lastMessageSnippet', 'lastMessageAt', 'messages', 'internalNotes'
+          ])
+        ));
+      allow delete: if isVerified() && isValidId(conversationId) &&
+        (isAdmin() || existing().ownerId == request.auth.uid);
+    }
+
+    // Audit Logs Collection (Append-only)
+    match /auditLogs/{logId} {
+      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidId(logId) &&
+        incoming().ownerId == request.auth.uid &&
+        isValidAuditLog(incoming());
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}
