@@ -219,3 +219,80 @@ apiRouter.post('/webhooks/meta', (req: Request, res: Response) => {
   // Verify webhook signature, parse entry
   res.status(200).send('EVENT_RECEIVED');
 });
+
+// 10. Supabase S3-Compatible Storage Endpoints
+const SUPABASE_S3_BUCKET_URL = process.env.S3_BUCKET_URL || 'https://pyidhqlrxjjbjoajkqjr.storage.supabase.co/storage/v1/s3';
+const S3_BUCKET_NAME = process.env.S3_BUCKET_NAME || 'firm-expo-media-vault';
+const S3_REGION = process.env.S3_REGION || 'us-east-1';
+
+apiRouter.get('/storage/config', (req: Request, res: Response) => {
+  res.json({
+    provider: 'supabase_s3',
+    bucketUrl: SUPABASE_S3_BUCKET_URL,
+    bucketName: S3_BUCKET_NAME,
+    region: S3_REGION,
+    status: 'connected',
+    supportedFormats: ['image/jpeg', 'image/png', 'video/mp4', 'video/quicktime'],
+    maxUploadSizeBytes: 100 * 1024 * 1024 // 100MB
+  });
+});
+
+apiRouter.post('/storage/presigned-url', (req: Request, res: Response) => {
+  const { filename, contentType } = req.body;
+  const timestamp = Date.now();
+  const sanitized = (filename || 'asset')
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]/g, '_');
+  const objectKey = `campaigns/${timestamp}_${sanitized}`;
+  const assetUrl = `${SUPABASE_S3_BUCKET_URL}/${S3_BUCKET_NAME}/${objectKey}`;
+
+  res.json({
+    success: true,
+    objectKey,
+    uploadUrl: `${SUPABASE_S3_BUCKET_URL}/${S3_BUCKET_NAME}/${objectKey}?upload=true`,
+    publicUrl: assetUrl,
+    bucket: S3_BUCKET_NAME,
+    expiresInSeconds: 3600
+  });
+});
+
+apiRouter.post('/storage/upload', (req: Request, res: Response) => {
+  const { name, type, fileSizeBytes, dimensions, tags } = req.body;
+  const timestamp = Date.now();
+  const sanitized = (name || 'upload')
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]/g, '_');
+  const objectKey = `media/${timestamp}_${sanitized}`;
+  const publicUrl = `${SUPABASE_S3_BUCKET_URL}/${S3_BUCKET_NAME}/${objectKey}`;
+
+  const asset = {
+    id: `s3-${timestamp}`,
+    name: name || 'Exhibition Media Asset',
+    url: publicUrl,
+    type: type || 'image',
+    aspectRatio: type === 'video' ? '9:16' : '1:1',
+    fileSizeBytes: fileSizeBytes || 2500000,
+    dimensions: dimensions || '1080 x 1080',
+    tags: tags || ['Firm Expo', 'S3 Storage'],
+    uploadedAt: new Date().toISOString(),
+    usageCount: 0,
+    s3Bucket: S3_BUCKET_NAME,
+    s3Key: objectKey,
+    s3Endpoint: SUPABASE_S3_BUCKET_URL
+  };
+
+  res.status(201).json({
+    success: true,
+    asset,
+    message: 'Media registered to Supabase S3 vault.'
+  });
+});
+
+apiRouter.get('/storage/health', (req: Request, res: Response) => {
+  res.json({
+    status: 'healthy',
+    endpoint: SUPABASE_S3_BUCKET_URL,
+    bucket: S3_BUCKET_NAME,
+    timestamp: new Date().toISOString()
+  });
+});

@@ -17,7 +17,9 @@ import {
   Info,
   Clock,
   Layers,
-  ArrowRight
+  ArrowRight,
+  HardDrive,
+  Image as ImageIcon
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { DMCampaign, DMCampaignObjective, Platform, EligibleContact } from '../../types';
@@ -36,7 +38,9 @@ export const CreateDMCampaignView: React.FC = () => {
     addDMCampaign, 
     setCurrentTab,
     user,
-    showToast 
+    showToast,
+    mediaAssets,
+    bucketUrl
   } = useApp();
 
   const [step, setStep] = useState<number>(1);
@@ -49,6 +53,7 @@ export const CreateDMCampaignView: React.FC = () => {
   const [platform, setPlatform] = useState<Platform>('instagram');
   const [accountId, setAccountId] = useState<string>('');
   const [audienceSegmentId, setAudienceSegmentId] = useState<string>(audienceSegments[0]?.id || '');
+  const [selectedMediaAssetId, setSelectedMediaAssetId] = useState<string>('');
   const [messageBody, setMessageBody] = useState<string>(
     'Hello {{firstName}}! Your digital pass for {{eventName}} is ready. Show this confirmation or access your personalized agenda here: {{registrationLink}}.'
   );
@@ -134,6 +139,8 @@ export const CreateDMCampaignView: React.FC = () => {
       audienceSegmentId: selectedSegment?.id || 'seg-1',
       audienceSegmentName: selectedSegment?.name || 'Active 24h Inquirers',
       messageBody,
+      mediaUrl: selectedMediaAssetId ? mediaAssets.find(m => m.id === selectedMediaAssetId)?.url : undefined,
+      mediaAssetId: selectedMediaAssetId || undefined,
       variables: {
         eventName: selectedEvent?.name || 'Firm Expo 2026',
         registrationLink: 'https://firmexpo.com/register'
@@ -543,6 +550,48 @@ export const CreateDMCampaignView: React.FC = () => {
                     ))}
                   </div>
                 </div>
+
+                {/* S3 Media Vault Creative Attachment */}
+                <div className="pt-2 border-t border-inherit">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                      <HardDrive className="w-3.5 h-3.5 text-cyan-500" />
+                      Attach Creative from S3 Vault (Optional):
+                    </span>
+                    {selectedMediaAssetId && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMediaAssetId('')}
+                        className="text-[10px] text-red-500 hover:underline"
+                      >
+                        Remove Attachment
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {mediaAssets.slice(0, 4).map(asset => (
+                      <div
+                        key={asset.id}
+                        onClick={() => setSelectedMediaAssetId(selectedMediaAssetId === asset.id ? '' : asset.id)}
+                        className={`relative rounded-lg overflow-hidden border cursor-pointer aspect-square ${
+                          selectedMediaAssetId === asset.id
+                            ? 'border-cyan-500 ring-2 ring-cyan-500/50'
+                            : isDarkMode ? 'border-neutral-800 hover:border-neutral-700' : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <img src={asset.url} alt={asset.name} className="w-full h-full object-cover" />
+                        {selectedMediaAssetId === asset.id && (
+                          <div className="absolute inset-0 bg-cyan-600/30 flex items-center justify-center">
+                            <Check className="w-4 h-4 text-white drop-shadow-md" />
+                          </div>
+                        )}
+                        <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[9px] text-white px-1 py-0.5 truncate">
+                          {asset.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {/* Mobile Preview Mockup */}
@@ -563,6 +612,19 @@ export const CreateDMCampaignView: React.FC = () => {
                         FE
                       </div>
                       <div className="max-w-[85%] rounded-2xl rounded-tl-xs p-3 text-xs bg-white dark:bg-neutral-800 border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white shadow-2xs">
+                        {selectedMediaAssetId && (
+                          <div className="mb-2 rounded-xl overflow-hidden border border-slate-200 dark:border-neutral-700">
+                            <img
+                              src={mediaAssets.find(m => m.id === selectedMediaAssetId)?.url}
+                              alt="Attachment"
+                              className="w-full h-32 object-cover"
+                            />
+                            <div className="p-1 bg-slate-50 dark:bg-neutral-900 text-[9px] text-slate-500 dark:text-neutral-400 flex items-center justify-between">
+                              <span className="truncate">S3 Media Creative</span>
+                              <span className="text-cyan-600 dark:text-cyan-400 font-mono">2.8 MB</span>
+                            </div>
+                          </div>
+                        )}
                         <p className="whitespace-pre-line leading-relaxed">{previewRender.renderedText}</p>
                         <span className="text-[9px] text-slate-400 block text-right mt-1.5">Just now · Delivered</span>
                       </div>

@@ -11,7 +11,12 @@ import {
   Layers, 
   X,
   FileCheck,
-  AlertCircle
+  AlertCircle,
+  HardDrive,
+  Server,
+  ExternalLink,
+  Copy,
+  CheckCircle2
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { MediaAsset } from '../../types';
@@ -24,7 +29,10 @@ export const MediaLibraryView: React.FC = () => {
     deleteMediaAsset, 
     setCurrentTab, 
     isDarkMode, 
-    showToast 
+    showToast,
+    bucketUrl,
+    bucketName,
+    uploadMediaToS3
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -34,6 +42,8 @@ export const MediaLibraryView: React.FC = () => {
   const [newTitle, setNewTitle] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [newTags, setNewTags] = useState('Exhibition, Dubai2026, Keynote');
+  const [isUploading, setIsUploading] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   const filteredAssets = mediaAssets.filter(m => {
     const matchesSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -48,23 +58,25 @@ export const MediaLibraryView: React.FC = () => {
       return;
     }
 
-    const created: MediaAsset = {
-      id: `asset-${Date.now()}`,
-      name: newTitle,
-      url: newUrl || '/src/assets/images/post_tech_headphones_1790377245788.jpg',
-      type: 'image',
-      aspectRatio: '1:1',
-      fileSizeBytes: 2800000,
-      dimensions: '1080 x 1080',
-      tags: newTags.split(',').map(t => t.trim()),
-      uploadedAt: new Date().toISOString(),
-      usageCount: 0,
-    };
+    setIsUploading(true);
 
-    addMediaAsset(created);
-    setUploadModalOpen(false);
-    setNewTitle('');
-    setNewUrl('');
+    setTimeout(() => {
+      uploadMediaToS3({
+        title: newTitle,
+        filename: `${newTitle.toLowerCase().replace(/\s+/g, '_')}.jpg`,
+        fileSizeBytes: 2850000,
+        type: 'image',
+        aspectRatio: '1:1',
+        dimensions: '1080 x 1080',
+        tags: newTags.split(',').map(t => t.trim()),
+        dataUrl: newUrl || undefined
+      });
+
+      setIsUploading(false);
+      setUploadModalOpen(false);
+      setNewTitle('');
+      setNewUrl('');
+    }, 600);
   };
 
   return (
@@ -85,8 +97,38 @@ export const MediaLibraryView: React.FC = () => {
           className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-colors self-start sm:self-auto"
         >
           <Upload className="w-4 h-4" />
-          <span>Upload Media</span>
+          <span>Upload to S3 Vault</span>
         </button>
+      </div>
+
+      {/* Supabase S3 Storage Vault Status Banner */}
+      <div className={`px-4 py-2.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
+        isDarkMode ? 'bg-cyan-950/20 border-cyan-800/40 text-cyan-300' : 'bg-cyan-50/70 border-cyan-200 text-cyan-900'
+      }`}>
+        <div className="flex items-center gap-2 truncate">
+          <HardDrive className="w-4 h-4 text-cyan-500 shrink-0" />
+          <span className="font-semibold text-xs">Supabase S3 Vault:</span>
+          <span className="font-mono text-[11px] truncate text-slate-600 dark:text-cyan-200" title={bucketUrl}>
+            {bucketUrl}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-900/60 text-cyan-800 dark:text-cyan-300 font-bold uppercase">
+            Bucket: {bucketName}
+          </span>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(bucketUrl);
+              setCopiedUrl(true);
+              showToast('Copied S3 Bucket URL to clipboard', 'info');
+              setTimeout(() => setCopiedUrl(false), 2000);
+            }}
+            className="p-1 rounded-md hover:bg-cyan-100 dark:hover:bg-cyan-900/40 transition-colors"
+            title="Copy Bucket URL"
+          >
+            {copiedUrl ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
+        </div>
       </div>
 
       {/* Search and Filters Toolbar */}
@@ -201,6 +243,19 @@ export const MediaLibraryView: React.FC = () => {
                 </div>
               </div>
 
+              {/* S3 Storage Location Details */}
+              <div className={`p-3 rounded-lg border text-xs font-mono space-y-1 ${
+                isDarkMode ? 'bg-neutral-800/60 border-neutral-700/80' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="flex items-center justify-between text-[11px] text-slate-400 font-sans">
+                  <span>Storage Vault</span>
+                  <span className="text-cyan-600 dark:text-cyan-400 font-semibold">Supabase S3</span>
+                </div>
+                <p className="text-[11px] text-slate-700 dark:text-neutral-300 truncate" title={selectedAsset.url}>
+                  {selectedAsset.s3Key || selectedAsset.url}
+                </p>
+              </div>
+
               <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
                 <FileCheck className="w-4 h-4 shrink-0" />
                 <span>Verified: Meets Meta Graph v22.0 requirements for Instagram Feed and Facebook Page Publishing.</span>
@@ -271,24 +326,44 @@ export const MediaLibraryView: React.FC = () => {
                 />
               </div>
 
+              <div className="p-3 rounded-lg border border-cyan-200 dark:border-cyan-800/60 bg-cyan-50/50 dark:bg-cyan-950/20 text-[11px] space-y-1">
+                <div className="flex items-center gap-1.5 font-semibold text-cyan-800 dark:text-cyan-300">
+                  <HardDrive className="w-3.5 h-3.5" />
+                  <span>Destination: Supabase S3 Vault</span>
+                </div>
+                <p className="font-mono text-[10px] text-slate-600 dark:text-cyan-200 truncate" title={`${bucketUrl}/${bucketName}`}>
+                  {bucketUrl}/{bucketName}
+                </p>
+              </div>
+
               <div className="p-4 rounded-xl border border-dashed border-slate-300 dark:border-neutral-700 text-center">
                 <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
                 <p className="font-semibold text-slate-700 dark:text-neutral-300">Drop creative here or browse</p>
-                <p className="text-[10px] text-slate-400 mt-1">PNG, JPG, MP4 up to 50MB</p>
+                <p className="text-[10px] text-slate-400 mt-1">PNG, JPG, MP4 up to 50MB · Stored on Supabase S3</p>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-inherit">
                 <button
+                  type="button"
                   onClick={() => setUploadModalOpen(false)}
                   className="px-4 py-2 rounded-lg border border-slate-300 dark:border-neutral-700 font-semibold"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
+                  disabled={isUploading}
                   onClick={handleUploadSubmit}
-                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold flex items-center gap-2"
                 >
-                  Confirm Upload
+                  {isUploading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Uploading to S3...</span>
+                    </>
+                  ) : (
+                    <span>Upload to S3 Vault</span>
+                  )}
                 </button>
               </div>
             </div>

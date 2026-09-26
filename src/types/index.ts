@@ -155,6 +155,17 @@ export interface MediaAsset {
   tags: string[];
   uploadedAt: string;
   usageCount: number;
+  s3Bucket?: string;
+  s3Key?: string;
+  s3Endpoint?: string;
+}
+
+export interface StorageConfig {
+  provider: 'supabase_s3';
+  bucketUrl: string;
+  bucketName: string;
+  region: string;
+  status: 'connected' | 'verifying' | 'unverified';
 }
 
 export interface InboxConversation {
@@ -309,6 +320,8 @@ export interface DMCampaign {
   audienceSegmentName: string;
   templateId?: string;
   messageBody: string;
+  mediaUrl?: string;
+  mediaAssetId?: string;
   variables: Record<string, string>;
   status: DMCampaignStatus;
   scheduledAt?: string;

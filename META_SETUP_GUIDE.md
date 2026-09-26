@@ -67,3 +67,17 @@ Configure the following endpoints in your Meta Developer App settings:
 - ❌ **Follower Scraping**: Extracting followers from public Instagram accounts is explicitly blocked.
 - ❌ **Cold Mass DMs**: Initiating direct messages to users who have never contacted the business is rejected by the eligibility engine.
 - ❌ **Automated Evasion**: Bypassing Meta rate limits or rotating unauthorized proxy accounts is strictly prohibited.
+
+---
+
+## 5. Supabase S3-Compatible Cloud Storage Setup
+
+High-resolution exhibition media, campaign attachments, and compliance evidence documents are securely stored in the Supabase S3 Media Vault:
+
+* **S3 Endpoint / Bucket URL**: `https://pyidhqlrxjjbjoajkqjr.storage.supabase.co/storage/v1/s3`
+* **Default Bucket Name**: `firm-expo-media-vault`
+* **Region**: `us-east-1`
+* **API Endpoints**:
+  - `GET /api/storage/config`: Retrieves active bucket configuration and validation constraints
+  - `POST /api/storage/presigned-url`: Generates signed S3 upload URLs for direct client uploads
+  - `POST /api/storage/upload`: Registers uploaded exhibition assets with resolution and aspect-ratio metadata

@@ -42,6 +42,11 @@ import {
   INITIAL_DM_METRICS
 } from '../data/dmMockData';
 import { 
+  S3StorageService, 
+  DEFAULT_SUPABASE_S3_ENDPOINT, 
+  DEFAULT_BUCKET_NAME 
+} from '../lib/storage/s3Client';
+import { 
   auth, 
   db, 
   googleProvider, 
@@ -177,10 +182,25 @@ interface AppContextType {
   disconnectAccount: (id: string) => void;
   reauthorizeAccount: (id: string) => void;
 
-  // Media
+  // Media & Cloud Storage (Supabase S3)
   mediaAssets: MediaAsset[];
   addMediaAsset: (asset: MediaAsset) => void;
   deleteMediaAsset: (id: string) => void;
+  bucketUrl: string;
+  setBucketUrl: (url: string) => void;
+  bucketName: string;
+  setBucketName: (name: string) => void;
+  uploadMediaToS3: (params: {
+    title: string;
+    filename: string;
+    fileSizeBytes: number;
+    type: 'image' | 'video';
+    aspectRatio?: string;
+    dimensions?: string;
+    tags?: string[];
+    dataUrl?: string;
+  }) => { asset: MediaAsset; validation: any };
+  testStorageConnection: () => Promise<{ success: boolean; message: string; latencyMs: number }>;
 
   // Inbox
   conversations: InboxConversation[];
@@ -597,6 +617,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const disconnectAccount = (id: string) => {};
   const reauthorizeAccount = (id: string) => {};
 
+  // Supabase S3 Cloud Storage & Media Vault
+  const [bucketUrl, setBucketUrlState] = useState<string>(() => {
+    const saved = localStorage.getItem('firmexpo_s3_bucket_url');
+    return saved || DEFAULT_SUPABASE_S3_ENDPOINT;
+  });
+  const [bucketName, setBucketNameState] = useState<string>(() => {
+    const saved = localStorage.getItem('firmexpo_s3_bucket_name');
+    return saved || DEFAULT_BUCKET_NAME;
+  });
+
+  const setBucketUrl = (url: string) => {
+    const clean = url.trim();
+    setBucketUrlState(clean);
+    localStorage.setItem('firmexpo_s3_bucket_url', clean);
+    S3StorageService.setEndpoint(clean);
+    showToast(`S3 Bucket URL updated to ${clean}`, 'success');
+  };
+
+  const setBucketName = (name: string) => {
+    const clean = name.trim();
+    setBucketNameState(clean);
+    localStorage.setItem('firmexpo_s3_bucket_name', clean);
+    S3StorageService.setBucketName(clean);
+    showToast(`S3 Bucket Name set to ${clean}`, 'info');
+  };
+
+  const testStorageConnection = async () => {
+    return await S3StorageService.testConnection(bucketUrl);
+  };
+
+  const uploadMediaToS3 = (params: {
+    title: string;
+    filename: string;
+    fileSizeBytes: number;
+    type: 'image' | 'video';
+    aspectRatio?: string;
+    dimensions?: string;
+    tags?: string[];
+    dataUrl?: string;
+  }) => {
+    const { asset, validation } = S3StorageService.createMediaAssetRecord({
+      ...params,
+      bucketName
+    });
+    setMediaAssets(prev => [asset, ...prev]);
+    showToast(`Uploaded "${asset.name}" to Supabase S3 vault`, 'success');
+    return { asset, validation };
+  };
+
   // Media
   const addMediaAsset = (m: MediaAsset) => setMediaAssets(prev => [m, ...prev]);
   const deleteMediaAsset = (id: string) => setMediaAssets(prev => prev.filter(m => m.id !== id));
@@ -697,6 +766,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         mediaAssets,
         addMediaAsset,
         deleteMediaAsset,
+        bucketUrl,
+        setBucketUrl,
+        bucketName,
+        setBucketName,
+        uploadMediaToS3,
+        testStorageConnection,
         conversations,
         replyToConversation,
         toggleResolveConversation,

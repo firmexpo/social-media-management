@@ -15,20 +15,63 @@ import {
   CheckCircle2,
   LogIn,
   LogOut,
-  RefreshCw
+  RefreshCw,
+  HardDrive,
+  Server,
+  Cloud
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { testConnection } from '../../lib/firebase';
 import firebaseConfig from '../../../firebase-applet-config.json';
 
 export const SettingsView: React.FC = () => {
-  const { isDemoMode, setIsDemoMode, isDarkMode, showToast, user, loginWithGoogle, logout } = useApp();
+  const { 
+    isDemoMode, 
+    setIsDemoMode, 
+    isDarkMode, 
+    showToast, 
+    user, 
+    loginWithGoogle, 
+    logout,
+    bucketUrl,
+    setBucketUrl,
+    bucketName,
+    setBucketName,
+    testStorageConnection
+  } = useApp();
 
   const [appId, setAppId] = useState('958144749148301');
   const [appSecret, setAppSecret] = useState('••••••••••••••••••••••••••••••••');
   const [webhookToken, setWebhookToken] = useState('firmexpo_secure_webhook_token_2026');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [testingDb, setTestingDb] = useState(false);
+
+  // S3 Storage State
+  const [storageEndpoint, setStorageEndpoint] = useState(bucketUrl);
+  const [storageBucket, setStorageBucket] = useState(bucketName);
+  const [testingStorage, setTestingStorage] = useState(false);
+  const [storageStatusMessage, setStorageStatusMessage] = useState<string | null>(null);
+
+  const handleTestStorage = async () => {
+    setTestingStorage(true);
+    setStorageStatusMessage(null);
+    try {
+      const res = await testStorageConnection();
+      setStorageStatusMessage(res.message);
+      showToast('Supabase S3 bucket endpoint reached successfully!', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Storage check failed', 'error');
+    } finally {
+      setTestingStorage(false);
+    }
+  };
+
+  const handleSaveStorage = () => {
+    setBucketUrl(storageEndpoint);
+    setStorageBucket(storageBucket);
+    setBucketName(storageBucket);
+    showToast('S3 Storage configuration saved successfully', 'success');
+  };
 
   const copyToClipboard = (text: string, fieldName: string) => {
     navigator.clipboard.writeText(text);
@@ -157,7 +200,126 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Integration Mode Switcher Card */}
+      {/* Supabase S3-Compatible Cloud Storage & Media Vault Card */}
+      <div className={`p-5 rounded-xl border ${
+        isDarkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200 shadow-xs'
+      }`}>
+        <div className="flex items-center justify-between pb-3 border-b border-inherit mb-3">
+          <div className="flex items-center gap-2">
+            <HardDrive className="w-4 h-4 text-cyan-500" />
+            <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+              Supabase S3-Compatible Cloud Storage (Media Vault)
+            </h3>
+          </div>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300">
+            Active S3 Endpoint
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-500 dark:text-neutral-400 mb-4">
+          Stores high-resolution promotional graphics, video reels, venue diagrams, and compliance attachments across campaigns.
+        </p>
+
+        <div className="space-y-4 text-xs">
+          <div>
+            <label className="block font-semibold mb-1 text-slate-700 dark:text-neutral-300">
+              S3 Bucket URL (Supabase S3 API)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={storageEndpoint}
+                onChange={(e) => setStorageEndpoint(e.target.value)}
+                placeholder="https://pyidhqlrxjjbjoajkqjr.storage.supabase.co/storage/v1/s3"
+                className={`flex-1 px-3 py-2 text-xs font-mono rounded-lg border outline-none ${
+                  isDarkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-slate-50 border-slate-200'
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => copyToClipboard(storageEndpoint, 'S3 Bucket URL')}
+                className="px-2.5 py-2 rounded-lg border border-slate-300 dark:border-neutral-700 hover:bg-slate-100 dark:hover:bg-neutral-800 font-semibold"
+                title="Copy Bucket URL"
+              >
+                {copiedField === 'S3 Bucket URL' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block font-semibold mb-1 text-slate-700 dark:text-neutral-300">Default Bucket Name</label>
+              <input
+                type="text"
+                value={storageBucket}
+                onChange={(e) => setStorageBucket(e.target.value)}
+                placeholder="firm-expo-media-vault"
+                className={`w-full px-3 py-2 text-xs font-mono rounded-lg border outline-none ${
+                  isDarkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-slate-50 border-slate-200'
+                }`}
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold mb-1 text-slate-700 dark:text-neutral-300">S3 Compatibility Region</label>
+              <input
+                type="text"
+                disabled
+                value="us-east-1 (Global edge acceleration)"
+                className={`w-full px-3 py-2 text-xs rounded-lg border opacity-80 cursor-not-allowed ${
+                  isDarkMode ? 'bg-neutral-850 border-neutral-750 text-neutral-400' : 'bg-slate-100 border-slate-200 text-slate-500'
+                }`}
+              />
+            </div>
+          </div>
+
+          {storageStatusMessage && (
+            <div className="p-3 rounded-lg bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800/60 text-cyan-800 dark:text-cyan-300 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-cyan-600 dark:text-cyan-400" />
+              <span>{storageStatusMessage}</span>
+            </div>
+          )}
+
+          <div className={`p-3 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+            isDarkMode ? 'bg-neutral-800/40 border-neutral-700/60' : 'bg-slate-50/70 border-slate-200'
+          }`}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-950/60 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0">
+                <Server className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="font-semibold text-slate-800 dark:text-neutral-200">
+                  Supabase S3 Storage Provider
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-neutral-400">
+                  Direct uploads, public asset hosting, and presigned URLs configured
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleTestStorage}
+                disabled={testingStorage}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-neutral-700 hover:bg-slate-100 dark:hover:bg-neutral-800 font-medium text-slate-700 dark:text-neutral-200 transition-colors text-xs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${testingStorage ? 'animate-spin' : ''}`} />
+                <span>{testingStorage ? 'Pinging S3...' : 'Test S3 Bucket'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveStorage}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-semibold shadow-xs transition-colors text-xs"
+              >
+                <span>Update S3 URL</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className={`p-5 rounded-xl border ${
         isDarkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200 shadow-xs'
       }`}>
