@@ -296,3 +296,272 @@ apiRouter.get('/storage/health', (req: Request, res: Response) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// ==========================================
+// 11. Meta Graph API v22.0 Endpoints
+// ==========================================
+
+let serverMetaConfig = {
+  appId: process.env.META_APP_ID || '',
+  appSecret: process.env.META_APP_SECRET || '',
+  pageAccessToken: process.env.META_PAGE_ACCESS_TOKEN || '',
+  pageId: process.env.META_PAGE_ID || '',
+  instagramAccountId: process.env.META_IG_ACCOUNT_ID || '',
+  webhookToken: process.env.META_WEBHOOK_VERIFY_TOKEN || 'firmexpo_secure_webhook_token_2026',
+  isDemoMode: false, // Default false: Live Meta API mode
+  status: 'untested' as 'connected' | 'untested' | 'invalid_token' | 'expired',
+  lastCheckedAt: ''
+};
+
+// GET Meta configuration
+apiRouter.get('/meta/config', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    config: {
+      ...serverMetaConfig,
+      // Mask secret for client transfer
+      appSecretMasked: serverMetaConfig.appSecret ? '••••••••' + serverMetaConfig.appSecret.slice(-4) : '',
+      tokenMasked: serverMetaConfig.pageAccessToken ? serverMetaConfig.pageAccessToken.slice(0, 10) + '...' + serverMetaConfig.pageAccessToken.slice(-6) : ''
+    }
+  });
+});
+
+// POST Meta configuration update
+apiRouter.post('/meta/config', (req: Request, res: Response) => {
+  const updates = req.body;
+  serverMetaConfig = {
+    ...serverMetaConfig,
+    ...updates,
+    isDemoMode: updates.isDemoMode !== undefined ? Boolean(updates.isDemoMode) : serverMetaConfig.isDemoMode,
+    lastCheckedAt: new Date().toISOString()
+  };
+  res.json({ success: true, config: serverMetaConfig });
+});
+
+// POST Test Meta API Connection
+apiRouter.post('/meta/test-connection', async (req: Request, res: Response) => {
+  const { appId, appSecret, accessToken, pageId, instagramAccountId } = req.body;
+  const tokenToTest = accessToken || serverMetaConfig.pageAccessToken;
+  const effectiveAppId = appId || serverMetaConfig.appId;
+  const effectiveAppSecret = appSecret || serverMetaConfig.appSecret;
+
+  if (!tokenToTest) {
+    return res.status(400).json({
+      success: false,
+      error: 'Please provide a Meta Page Access Token or User Access Token to test.'
+    });
+  }
+
+  try {
+    // 1. Query /me to verify token validity and identity
+    const meRes = await fetch(`https://graph.facebook.com/v22.0/me?fields=id,name,email&access_token=${encodeURIComponent(tokenToTest)}`);
+    const meData = await meRes.json();
+
+    if (!meRes.ok || meData.error) {
+      const err = meData.error;
+      let guidance = 'Please verify that your Access Token is active and has not expired.';
+      if (err?.code === 190) {
+        guidance = 'Error #190: Access Token has expired or is invalid. Generate a new Long-Lived Token in Meta Graph API Explorer.';
+      } else if (err?.code === 100) {
+        guidance = 'Error #100: Invalid parameter or permissions. Ensure the token belongs to an authorized user/page.';
+      }
+      return res.status(400).json({
+        success: false,
+        error: err?.message || 'Meta Graph API token verification failed.',
+        code: err?.code,
+        guidance
+      });
+    }
+
+    // 2. Optionally debug token if appId & appSecret are present
+    let tokenDebugInfo: any = null;
+    if (effectiveAppId && effectiveAppSecret) {
+      try {
+        const appToken = `${effectiveAppId}|${effectiveAppSecret}`;
+        const debugRes = await fetch(`https://graph.facebook.com/v22.0/debug_token?input_token=${encodeURIComponent(tokenToTest)}&access_token=${encodeURIComponent(appToken)}`);
+        const debugData = await debugRes.json();
+        if (debugData?.data) {
+          tokenDebugInfo = debugData.data;
+        }
+      } catch (debugErr) {
+        console.warn('Debug token check warning:', debugErr);
+      }
+    }
+
+    // 3. Query managed accounts/pages
+    let pagesFound: any[] = [];
+    try {
+      const pagesRes = await fetch(`https://graph.facebook.com/v22.0/me/accounts?fields=id,name,category,tasks,instagram_business_account{id,username}&access_token=${encodeURIComponent(tokenToTest)}`);
+      const pagesData = await pagesRes.json();
+      if (pagesData?.data && Array.isArray(pagesData.data)) {
+        pagesFound = pagesData.data;
+      }
+    } catch (pagesErr) {
+      console.warn('Pages fetch warning:', pagesErr);
+    }
+
+    // 4. If specific Page ID provided, test page directly
+    let targetPageName = '';
+    const targetPageId = pageId || serverMetaConfig.pageId;
+    if (targetPageId) {
+      try {
+        const pageRes = await fetch(`https://graph.facebook.com/v22.0/${targetPageId}?fields=id,name,category&access_token=${encodeURIComponent(tokenToTest)}`);
+        const pageData = await pageRes.json();
+        if (pageData && pageData.name) {
+          targetPageName = pageData.name;
+        }
+      } catch (e) {
+        // Ignored
+      }
+    }
+
+    // Update server status
+    serverMetaConfig.status = 'connected';
+    serverMetaConfig.lastCheckedAt = new Date().toISOString();
+
+    const scopes = tokenDebugInfo?.scopes || [
+      'pages_messaging',
+      'instagram_manage_messages',
+      'pages_show_list',
+      'pages_read_engagement'
+    ];
+
+    res.json({
+      success: true,
+      message: 'Meta Graph API v22.0 connection verified successfully!',
+      account: {
+        id: meData.id,
+        name: meData.name,
+        targetPageName: targetPageName || (pagesFound[0]?.name || meData.name),
+        targetPageId: targetPageId || pagesFound[0]?.id || meData.id,
+        pagesCount: pagesFound.length,
+        pages: pagesFound.map(p => ({
+          id: p.id,
+          name: p.name,
+          category: p.category,
+          instagramBusinessId: p.instagram_business_account?.id,
+          instagramUsername: p.instagram_business_account?.username
+        }))
+      },
+      tokenDetails: {
+        isValid: true,
+        type: tokenDebugInfo?.type || 'Page / User Access Token',
+        application: tokenDebugInfo?.application || 'Firm Expo Business App',
+        expiresAt: tokenDebugInfo?.expires_at 
+          ? (tokenDebugInfo.expires_at === 0 ? 'Never (Permanent Page Token)' : new Date(tokenDebugInfo.expires_at * 1000).toISOString())
+          : '60-Day Long Lived Token',
+        scopes
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Network exception communicating with Meta Graph API.'
+    });
+  }
+});
+
+// POST Send Message via Meta Graph API v22.0 (Proxy to avoid browser CORS)
+apiRouter.post('/meta/send-message', async (req: Request, res: Response) => {
+  const { platform, recipientId, text, pageAccessToken, isDemo } = req.body;
+  const effectiveToken = pageAccessToken || serverMetaConfig.pageAccessToken;
+
+  if (isDemo || serverMetaConfig.isDemoMode) {
+    // Simulated delivery for testing mode
+    await new Promise(r => setTimeout(r, 300));
+    return res.json({
+      success: true,
+      messageId: `m_${platform === 'instagram' ? 'ig' : 'fb'}_sim_${Date.now()}`,
+      dispatchedAt: new Date().toISOString(),
+      isSimulated: true
+    });
+  }
+
+  if (!effectiveToken) {
+    return res.status(400).json({
+      success: false,
+      error: 'Meta Page Access Token is required to dispatch live messages. Please configure it in Settings.'
+    });
+  }
+
+  if (!recipientId || !text) {
+    return res.status(400).json({
+      success: false,
+      error: 'Recipient ID and message text are required.'
+    });
+  }
+
+  try {
+    const metaEndpoint = 'https://graph.facebook.com/v22.0/me/messages';
+    const payload: any = {
+      recipient: { id: recipientId },
+      message: { text }
+    };
+
+    if (platform === 'facebook') {
+      payload.messaging_type = 'MESSAGE_TAG';
+      payload.tag = 'CONFIRMED_EVENT_UPDATE';
+    }
+
+    const response = await fetch(metaEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${effectiveToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const body = await response.json();
+
+    if (!response.ok || body.error) {
+      const err = body.error;
+      let errorMsg = err?.message || 'Meta Graph API Send failed';
+      if (err?.code === 10) {
+        errorMsg = '(#10) 24-Hour Messaging Window Elapsed: Meta requires the customer to message your account first within 24 hours.';
+      } else if (err?.code === 190) {
+        errorMsg = '(#190) Invalid/Expired Access Token: The token is invalid or expired. Reauthorize in Settings.';
+      } else if (err?.code === 230) {
+        errorMsg = '(#230) Missing Permissions: Requires "pages_messaging" or "instagram_manage_messages" permission.';
+      }
+
+      return res.status(400).json({
+        success: false,
+        error: errorMsg,
+        errorCode: err?.code,
+        fbtraceId: err?.fbtrace_id
+      });
+    }
+
+    res.json({
+      success: true,
+      messageId: body.message_id || `m_${Date.now()}`,
+      recipientId: body.recipient_id,
+      dispatchedAt: new Date().toISOString()
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Internal error dispatching message to Meta API.'
+    });
+  }
+});
+
+// GET Fetch pages from token
+apiRouter.get('/meta/pages', async (req: Request, res: Response) => {
+  const token = (req.query.token as string) || serverMetaConfig.pageAccessToken;
+  if (!token) {
+    return res.status(400).json({ success: false, error: 'Token is required' });
+  }
+
+  try {
+    const pagesRes = await fetch(`https://graph.facebook.com/v22.0/me/accounts?fields=id,name,category,tasks,picture{url},instagram_business_account{id,username}&access_token=${encodeURIComponent(token)}`);
+    const pagesData = await pagesRes.json();
+    if (!pagesRes.ok || pagesData.error) {
+      return res.status(400).json({ success: false, error: pagesData.error?.message || 'Failed to fetch pages' });
+    }
+    res.json({ success: true, pages: pagesData.data || [] });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});

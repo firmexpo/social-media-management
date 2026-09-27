@@ -10,6 +10,7 @@ import {
 import { 
   getFirestore, 
   doc, 
+  getDoc,
   getDocFromServer,
   collection,
   getDocs,
@@ -97,6 +98,7 @@ export {
   signOut,
   onAuthStateChanged,
   doc,
+  getDoc,
   collection,
   getDocs,
   setDoc,

@@ -26,6 +26,8 @@ export const Header: React.FC<HeaderProps> = ({ sidebarCollapsed }) => {
     currentWorkspace, 
     isDemoMode, 
     setIsDemoMode, 
+    updateMetaConfig,
+    disableTestModeInDatabase,
     isDarkMode, 
     toggleDarkMode,
     socialAccounts,
@@ -108,15 +110,15 @@ export const Header: React.FC<HeaderProps> = ({ sidebarCollapsed }) => {
             {isDemoMode ? 'Demo Mode' : 'Live Meta Graph API v22.0'}
           </span>
           <button
-            onClick={() => setIsDemoMode(!isDemoMode)}
+            onClick={() => updateMetaConfig({ isDemoMode: !isDemoMode })}
             className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wider transition-colors ${
               isDemoMode 
                 ? 'bg-amber-200/70 hover:bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-100'
                 : 'bg-emerald-200/70 hover:bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-100'
             }`}
-            title="Toggle between sample demonstration data and production Meta API connectivity"
+            title="Toggle between sample demonstration data and production Meta API connectivity and persist to database"
           >
-            {isDemoMode ? 'Live Mode' : 'Demo Mode'}
+            {isDemoMode ? 'Switch to Live' : 'Demo Sandbox'}
           </button>
         </div>
 

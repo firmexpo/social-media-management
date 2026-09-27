@@ -498,3 +498,23 @@ export interface DMOverviewMetrics {
   optOutRate: number;
 }
 
+export interface MetaApiConfig {
+  appId: string;
+  appSecret: string;
+  pageAccessToken: string;
+  pageId: string;
+  instagramAccountId: string;
+  webhookToken: string;
+  isDemoMode: boolean; // Persisted in database, default false (Live Mode)
+  status: 'connected' | 'untested' | 'invalid_token' | 'expired';
+  tokenDetails?: {
+    appName?: string;
+    userName?: string;
+    pageName?: string;
+    expiresAt?: string;
+    scopes?: string[];
+    tokenType?: string;
+  };
+  lastCheckedAt?: string;
+}
+

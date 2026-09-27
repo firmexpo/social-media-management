@@ -57,6 +57,43 @@ export class InstagramMessagingClient {
       };
     }
 
+    // Try backend proxy endpoint first to bypass browser CORS constraints
+    try {
+      const proxyRes = await fetch('/api/meta/send-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform: 'instagram',
+          recipientId: instagramScopedUserId,
+          text,
+          pageAccessToken,
+          isDemo: false
+        })
+      });
+
+      if (proxyRes.ok) {
+        const body = await proxyRes.json();
+        return {
+          success: true,
+          data: {
+            recipient_id: body.recipientId || instagramScopedUserId,
+            message_id: body.messageId
+          }
+        };
+      } else {
+        const errJson = await proxyRes.json().catch(() => null);
+        if (errJson && errJson.error) {
+          return {
+            success: false,
+            error: errJson.error,
+            errorCode: errJson.errorCode
+          };
+        }
+      }
+    } catch {
+      // Fallback to direct client fetch if proxy endpoint not reached
+    }
+
     try {
       const response = await fetch(`${this.BASE_URL}/me/messages`, {
         method: 'POST',

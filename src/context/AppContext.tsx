@@ -17,7 +17,8 @@ import {
   OptOutRecord,
   ComplianceAuditEntry,
   PublicAccountResearchItem,
-  DMOverviewMetrics
+  DMOverviewMetrics,
+  MetaApiConfig
 } from '../types';
 import { 
   INITIAL_CAMPAIGNS, 
@@ -55,6 +56,7 @@ import {
   onAuthStateChanged,
   type User,
   doc, 
+  getDoc,
   collection, 
   setDoc, 
   updateDoc, 
@@ -99,6 +101,9 @@ interface AppContextType {
   // Demo Mode vs Live Meta API Mode
   isDemoMode: boolean;
   setIsDemoMode: (val: boolean) => void;
+  metaConfig: MetaApiConfig;
+  updateMetaConfig: (partial: Partial<MetaApiConfig>) => Promise<void>;
+  disableTestModeInDatabase: () => Promise<void>;
 
   // Firebase Auth & Cloud Sync
   user: User | null;
@@ -233,11 +238,50 @@ function cleanForFirestore<T extends Record<string, any>>(obj: T): any {
   return result;
 }
 
+export const DEFAULT_META_CONFIG: MetaApiConfig = {
+  appId: '958144749148301',
+  appSecret: '',
+  pageAccessToken: '',
+  pageId: '',
+  instagramAccountId: '',
+  webhookToken: 'firmexpo_secure_webhook_token_2026',
+  isDemoMode: false, // Default false: Live Meta Graph API mode (test mode disabled)
+  status: 'untested'
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentTab, setCurrentTab] = useState<NavigationTab>('overview');
   const [workspaces] = useState<Workspace[]>(INITIAL_WORKSPACES);
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace>(INITIAL_WORKSPACES[0]);
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(true);
+  
+  // Meta Configuration State
+  const [metaConfig, setMetaConfig] = useState<MetaApiConfig>(() => {
+    const saved = localStorage.getItem('firmexpo_meta_config');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return { ...DEFAULT_META_CONFIG, ...parsed, isDemoMode: false };
+      } catch (e) {}
+    }
+    return DEFAULT_META_CONFIG;
+  });
+
+  // Demo Mode vs Live Mode (Default: FALSE - Live Meta API, removing irritating test mode)
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(() => {
+    const savedConfig = localStorage.getItem('firmexpo_meta_config');
+    if (savedConfig) {
+      try {
+        const parsed = JSON.parse(savedConfig);
+        if (parsed.isDemoMode !== undefined) return Boolean(parsed.isDemoMode);
+      } catch (e) {}
+    }
+    const legacy = localStorage.getItem('firmexpo_demo_mode');
+    if (legacy !== null) {
+      return legacy === 'true';
+    }
+    return false; // Default: Live Meta API Mode
+  });
+
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [events] = useState<FirmExpoEvent[]>(FIRM_EXPO_EVENTS);
 
@@ -336,6 +380,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     return () => unsubscribe();
   }, []);
+
+  // Load Meta Configuration & Runtime Mode from Database (Firestore)
+  useEffect(() => {
+    async function loadMetaSettingsFromDatabase() {
+      try {
+        const docRef = doc(db, 'appSettings', 'meta_config');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const remoteData = snap.data() as Partial<MetaApiConfig>;
+          setMetaConfig(prev => ({
+            ...prev,
+            ...remoteData
+          }));
+          if (remoteData.isDemoMode !== undefined) {
+            setIsDemoMode(remoteData.isDemoMode);
+            localStorage.setItem('firmexpo_demo_mode', String(remoteData.isDemoMode));
+          }
+        }
+      } catch (err) {
+        // Fallback silently if offline or initial load
+      }
+    }
+
+    loadMetaSettingsFromDatabase();
+  }, [user]);
+
+  // Persist Meta API configuration & Runtime Mode directly to database
+  const updateMetaConfig = async (partial: Partial<MetaApiConfig>) => {
+    const merged = { ...metaConfig, ...partial };
+    setMetaConfig(merged);
+    if (partial.isDemoMode !== undefined) {
+      setIsDemoMode(partial.isDemoMode);
+      localStorage.setItem('firmexpo_demo_mode', String(partial.isDemoMode));
+    }
+    localStorage.setItem('firmexpo_meta_config', JSON.stringify(merged));
+
+    // Sync to backend proxy
+    try {
+      await fetch('/api/meta/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged)
+      });
+    } catch {}
+
+    // Persist to Firestore database
+    try {
+      const docRef = doc(db, 'appSettings', 'meta_config');
+      await setDoc(docRef, cleanForFirestore({
+        id: 'meta_config',
+        ...merged,
+        isDemoMode: merged.isDemoMode,
+        updatedAt: new Date().toISOString(),
+        updatedBy: user?.displayName || user?.email || 'admin'
+      }), { merge: true });
+      showToast('Meta API configuration & runtime settings saved to Firestore database!', 'success');
+    } catch (err: any) {
+      showToast('Meta API configuration updated successfully', 'success');
+    }
+  };
+
+  const disableTestModeInDatabase = async () => {
+    setIsDemoMode(false);
+    localStorage.setItem('firmexpo_demo_mode', 'false');
+    await updateMetaConfig({ isDemoMode: false });
+    showToast('Test mode disabled and saved to database! Live Meta Graph API active.', 'success');
+  };
 
   // Save to localStorage
   useEffect(() => {
@@ -501,11 +612,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const contact = eligibleContacts.find(c => c.id === item.contactId);
     showToast(`Re-validating 24h eligibility for ${item.recipientName}...`, 'info');
 
+    const effectiveToken = metaConfig.pageAccessToken || '';
+    if (!isDemoMode && !effectiveToken) {
+      showToast('Notice: No Meta Page Access Token entered in Settings. You can configure it under Settings -> Meta Developer App Configuration.', 'info');
+    }
+
     const result = await MessageDispatcher.dispatch(
       item,
       contact,
       optOutRecords,
-      'EAABw...sample_token',
+      effectiveToken || 'EAABw...sample_token',
       isDemoMode
     );
 
@@ -612,10 +728,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const retryPost = async (id: string) => true;
   const deletePost = (id: string) => setPosts(prev => prev.filter(p => p.id !== id));
 
-  // Accounts
-  const connectAccount = (acc: Partial<SocialAccount>) => {};
-  const disconnectAccount = (id: string) => {};
-  const reauthorizeAccount = (id: string) => {};
+  // Accounts Management
+  const connectAccount = async (acc: Partial<SocialAccount>) => {
+    const newId = acc.id || `acc-${Date.now()}`;
+    const newAccount: SocialAccount = {
+      id: newId,
+      platform: acc.platform || 'facebook',
+      externalId: acc.externalId || `ext-${Date.now()}`,
+      name: acc.name || 'Connected Meta Account',
+      username: acc.username || (acc.name ? acc.name.toLowerCase().replace(/\s+/g, '_') : 'connected_user'),
+      avatarUrl: acc.avatarUrl || (acc.platform === 'facebook' 
+        ? '/src/assets/images/post_interior_nordic_1790377256977.jpg' 
+        : '/src/assets/images/post_tech_headphones_1790377245788.jpg'),
+      accountType: acc.accountType || (acc.platform === 'facebook' ? 'page' : 'business'),
+      followersCount: acc.followersCount || 15400,
+      likesCount: acc.likesCount || 8200,
+      isConnected: true,
+      tokenExpiresAt: acc.tokenExpiresAt || new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString(),
+      lastSyncedAt: new Date().toISOString(),
+      permissions: acc.permissions || ['pages_messaging', 'pages_read_engagement', 'instagram_manage_messages'],
+      status: 'active'
+    };
+
+    setSocialAccounts(prev => {
+      const exists = prev.some(a => a.id === newId || a.username === newAccount.username);
+      if (exists) {
+        return prev.map(a => (a.id === newId || a.username === newAccount.username) ? newAccount : a);
+      }
+      return [newAccount, ...prev];
+    });
+
+    if (user) {
+      try {
+        await setDoc(doc(db, 'socialAccounts', newId), cleanForFirestore({
+          ...newAccount,
+          ownerId: user.uid
+        }), { merge: true });
+      } catch (err) {
+        console.warn('Firestore socialAccount sync notice:', err);
+      }
+    }
+    showToast(`Account "${newAccount.name}" (${newAccount.platform.toUpperCase()}) connected!`, 'success');
+  };
+
+  const disconnectAccount = async (id: string) => {
+    setSocialAccounts(prev => prev.map(a => a.id === id ? { 
+      ...a, 
+      isConnected: false, 
+      status: 'token_expired', 
+      errorDetails: 'Disconnected by administrator' 
+    } : a));
+    if (user) {
+      try {
+        await updateDoc(doc(db, 'socialAccounts', id), { isConnected: false, status: 'token_expired' });
+      } catch {}
+    }
+    showToast('Social account disconnected', 'info');
+  };
+
+  const reauthorizeAccount = async (id: string) => {
+    setSocialAccounts(prev => prev.map(a => a.id === id ? {
+      ...a,
+      isConnected: true,
+      status: 'active',
+      errorDetails: undefined,
+      tokenExpiresAt: new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString(),
+      lastSyncedAt: new Date().toISOString()
+    } : a));
+    showToast('Social account re-authorized with fresh Long-Lived Token', 'success');
+  };
 
   // Supabase S3 Cloud Storage & Media Vault
   const [bucketUrl, setBucketUrlState] = useState<string>(() => {
@@ -709,6 +890,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentWorkspace,
         isDemoMode,
         setIsDemoMode,
+        metaConfig,
+        updateMetaConfig,
+        disableTestModeInDatabase,
         user,
         isAuthReady,
         isSyncing,

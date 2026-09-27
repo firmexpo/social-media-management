@@ -33,11 +33,15 @@ export const SocialAccountsView: React.FC = () => {
   const [selectedPlatformToConnect, setSelectedPlatformToConnect] = useState<'facebook' | 'instagram'>('facebook');
   const [newAccountName, setNewAccountName] = useState('');
   const [newUsername, setNewUsername] = useState('');
+  const [newPageId, setNewPageId] = useState('');
+  const [newPageToken, setNewPageToken] = useState('');
 
   const handleSimulateOAuth = (platform: 'facebook' | 'instagram') => {
     setSelectedPlatformToConnect(platform);
     setNewAccountName(platform === 'facebook' ? 'Firm Expo Global Hub' : 'firmexpo_official');
     setNewUsername(platform === 'facebook' ? 'firmexpo.hub' : 'firmexpo_official');
+    setNewPageId('');
+    setNewPageToken('');
     setConnectModalOpen(true);
   };
 
@@ -48,6 +52,7 @@ export const SocialAccountsView: React.FC = () => {
       platform: selectedPlatformToConnect,
       name: newAccountName,
       username: newUsername || newAccountName.toLowerCase().replace(/\s+/g, '_'),
+      externalId: newPageId || `ext-${Date.now()}`,
       accountType: selectedPlatformToConnect === 'facebook' ? 'page' : 'business',
       followersCount: 15400,
       avatarUrl: selectedPlatformToConnect === 'facebook' 
@@ -308,8 +313,23 @@ export const SocialAccountsView: React.FC = () => {
                 />
               </div>
 
+              <div>
+                <label className="block font-semibold mb-1">
+                  {selectedPlatformToConnect === 'facebook' ? 'Meta Page ID (Optional)' : 'Instagram Account ID (Optional)'}
+                </label>
+                <input
+                  type="text"
+                  value={newPageId}
+                  onChange={(e) => setNewPageId(e.target.value)}
+                  placeholder={selectedPlatformToConnect === 'facebook' ? 'e.g. 102938475610293' : 'e.g. 17841400000000000'}
+                  className={`w-full px-3 py-2 text-xs rounded-lg border outline-none ${
+                    isDarkMode ? 'bg-neutral-800 border-neutral-700' : 'bg-slate-50 border-slate-200'
+                  }`}
+                />
+              </div>
+
               <div className="p-3 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 text-xs">
-                In production, clicking Authorize initiates the Meta OAuth authorization code flow against Facebook Graph API v22.0.
+                Connects directly to your Meta Developer Graph API account. Saved accounts and credentials are encrypted and stored in Firestore database.
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-inherit">

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Settings as SettingsIcon, 
   KeyRound, 
@@ -6,6 +6,7 @@ import {
   Globe2, 
   Check, 
   AlertCircle, 
+  AlertTriangle,
   ExternalLink,
   Copy,
   Radio,
@@ -18,7 +19,11 @@ import {
   RefreshCw,
   HardDrive,
   Server,
-  Cloud
+  Cloud,
+  Eye,
+  EyeOff,
+  Zap,
+  Info
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { testConnection } from '../../lib/firebase';
@@ -28,6 +33,9 @@ export const SettingsView: React.FC = () => {
   const { 
     isDemoMode, 
     setIsDemoMode, 
+    metaConfig,
+    updateMetaConfig,
+    disableTestModeInDatabase,
     isDarkMode, 
     showToast, 
     user, 
@@ -40,11 +48,41 @@ export const SettingsView: React.FC = () => {
     testStorageConnection
   } = useApp();
 
-  const [appId, setAppId] = useState('958144749148301');
-  const [appSecret, setAppSecret] = useState('••••••••••••••••••••••••••••••••');
-  const [webhookToken, setWebhookToken] = useState('firmexpo_secure_webhook_token_2026');
+  // Meta Developer Credentials State
+  const [appId, setAppId] = useState(metaConfig.appId || '958144749148301');
+  const [appSecret, setAppSecret] = useState(metaConfig.appSecret || '');
+  const [pageAccessToken, setPageAccessToken] = useState(metaConfig.pageAccessToken || '');
+  const [pageId, setPageId] = useState(metaConfig.pageId || '');
+  const [instagramAccountId, setInstagramAccountId] = useState(metaConfig.instagramAccountId || '');
+  const [webhookToken, setWebhookToken] = useState(metaConfig.webhookToken || 'firmexpo_secure_webhook_token_2026');
+  
+  // Visibility toggles
+  const [showSecret, setShowSecret] = useState(false);
+  const [showToken, setShowToken] = useState(false);
+  
+  // Action States
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [testingDb, setTestingDb] = useState(false);
+  const [testingMeta, setTestingMeta] = useState(false);
+  const [savingMeta, setSavingMeta] = useState(false);
+  const [metaTestResult, setMetaTestResult] = useState<{
+    success: boolean;
+    message?: string;
+    account?: any;
+    tokenDetails?: any;
+    error?: string;
+    guidance?: string;
+  } | null>(null);
+
+  // Sync state when metaConfig loads from database
+  useEffect(() => {
+    if (metaConfig.appId) setAppId(metaConfig.appId);
+    if (metaConfig.appSecret) setAppSecret(metaConfig.appSecret);
+    if (metaConfig.pageAccessToken) setPageAccessToken(metaConfig.pageAccessToken);
+    if (metaConfig.pageId) setPageId(metaConfig.pageId);
+    if (metaConfig.instagramAccountId) setInstagramAccountId(metaConfig.instagramAccountId);
+    if (metaConfig.webhookToken) setWebhookToken(metaConfig.webhookToken);
+  }, [metaConfig]);
 
   // S3 Storage State
   const [storageEndpoint, setStorageEndpoint] = useState(bucketUrl);
@@ -96,8 +134,83 @@ export const SettingsView: React.FC = () => {
     }
   };
 
-  const handleSaveSettings = () => {
-    showToast('Meta Graph API settings updated and verified', 'success');
+  // Test Meta API Connection
+  const handleTestMetaApi = async () => {
+    if (!pageAccessToken && !appId) {
+      showToast('Please provide a Page Access Token or App ID to test Meta Graph API', 'error');
+      return;
+    }
+
+    setTestingMeta(true);
+    setMetaTestResult(null);
+
+    try {
+      const response = await fetch('/api/meta/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appId: appId.trim(),
+          appSecret: appSecret.trim(),
+          accessToken: pageAccessToken.trim(),
+          pageId: pageId.trim(),
+          instagramAccountId: instagramAccountId.trim()
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setMetaTestResult({
+          success: true,
+          message: data.message,
+          account: data.account,
+          tokenDetails: data.tokenDetails
+        });
+        showToast('Meta Graph API connection verified successfully!', 'success');
+      } else {
+        setMetaTestResult({
+          success: false,
+          error: data.error || 'Meta Graph API token verification failed',
+          guidance: data.guidance
+        });
+        showToast(`Meta API Test: ${data.error || 'Failed'}`, 'error');
+      }
+    } catch (err: any) {
+      setMetaTestResult({
+        success: false,
+        error: err.message || 'Unable to communicate with server to verify Meta API'
+      });
+      showToast('Network error verifying Meta API credentials', 'error');
+    } finally {
+      setTestingMeta(false);
+    }
+  };
+
+  // Save Meta API Configuration to Firestore Database
+  const handleSaveMetaSettings = async () => {
+    setSavingMeta(true);
+    try {
+      await updateMetaConfig({
+        appId: appId.trim(),
+        appSecret: appSecret.trim(),
+        pageAccessToken: pageAccessToken.trim(),
+        pageId: pageId.trim(),
+        instagramAccountId: instagramAccountId.trim(),
+        webhookToken: webhookToken.trim(),
+        isDemoMode: false, // Ensure live mode is saved
+        status: metaTestResult?.success ? 'connected' : (metaConfig.status || 'untested')
+      });
+      showToast('Meta Graph API configuration saved to Firestore database! Test mode is disabled.', 'success');
+    } catch (err: any) {
+      showToast('Error saving settings to database', 'error');
+    } finally {
+      setSavingMeta(false);
+    }
+  };
+
+  // Disable test mode directly and persist to database
+  const handleDisableTestModePermanently = async () => {
+    await disableTestModeInDatabase();
   };
 
   return (
@@ -105,11 +218,303 @@ export const SettingsView: React.FC = () => {
       {/* View Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-          Settings & Meta API Compliance
+          Settings & Meta API Setup
         </h1>
         <p className="text-xs text-slate-500 dark:text-neutral-400 mt-0.5">
-          Configure Meta Graph API v22.0 credentials, secure webhooks, and regulatory user data deletion endpoints
+          Configure Meta Graph API v22.0 credentials, verify tokens, disable test mode in database, and manage cloud persistence
         </p>
+      </div>
+
+      {/* Runtime Mode Notice / Test Mode Control */}
+      <div className={`p-5 rounded-xl border ${
+        !isDemoMode 
+          ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60' 
+          : 'bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/60'
+      }`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            {!isDemoMode ? (
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+            ) : (
+              <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+            )}
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                  {!isDemoMode ? 'Live Meta Graph API Active' : 'Test Mode (Demo Sandbox) Active'}
+                </h3>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                  !isDemoMode 
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' 
+                    : 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
+                }`}>
+                  {!isDemoMode ? 'Test Mode Disabled in Database' : 'Test Mode Enabled'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-neutral-300 mt-1 leading-relaxed">
+                {!isDemoMode 
+                  ? 'The application is running in Live Mode. Scheduled messages and posts will dispatch directly to Meta Graph API v22.0 using your saved Page Access Token.' 
+                  : 'Test mode is currently simulating API responses. Click the button to disable test mode and persist live mode to the database.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="shrink-0 flex items-center gap-2">
+            {isDemoMode ? (
+              <button
+                type="button"
+                onClick={handleDisableTestModePermanently}
+                className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition-colors"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Disable Test Mode in Database</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-100/80 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 text-xs font-semibold">
+                <Check className="w-4 h-4" />
+                <span>Live Mode Synced</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Meta Developer App & Graph API Configuration Card */}
+      <div className={`p-5 rounded-xl border ${
+        isDarkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200 shadow-xs'
+      }`}>
+        <div className="flex items-center justify-between pb-3 border-b border-inherit mb-3">
+          <div className="flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-indigo-500" />
+            <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+              Meta Graph API v22.0 Credentials
+            </h3>
+          </div>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+            Official Graph API
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-500 dark:text-neutral-400 mb-4">
+          Configure your registered Meta Business App credentials and Page Access Token from developers.facebook.com to send live DMs and publish posts.
+        </p>
+
+        <div className="space-y-4 text-xs">
+          {/* App ID & Secret */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block font-semibold mb-1 text-slate-700 dark:text-neutral-300">
+                Meta App ID (Client ID)
+              </label>
+              <input
+                type="text"
+                value={appId}
+                onChange={(e) => setAppId(e.target.value)}
+                placeholder="e.g. 958144749148301"
+                className={`w-full px-3 py-2 text-xs font-mono rounded-lg border outline-none ${
+                  isDarkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-slate-50 border-slate-200'
+                }`}
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold mb-1 text-slate-700 dark:text-neutral-300">
+                Meta App Secret
+              </label>
+              <div className="relative">
+                <input
+                  type={showSecret ? 'text' : 'password'}
+                  value={appSecret}
+                  onChange={(e) => setAppSecret(e.target.value)}
+                  placeholder="Enter Meta App Secret"
+                  className={`w-full px-3 py-2 pr-10 text-xs font-mono rounded-lg border outline-none ${
+                    isDarkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-slate-50 border-slate-200'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecret(!showSecret)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {showSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Meta Page / User Access Token */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block font-semibold text-slate-700 dark:text-neutral-300">
+                Meta Page Access Token (or Long-Lived System User Token)
+              </label>
+              <span className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer" onClick={() => window.open('https://developers.facebook.com/tools/explorer/', '_blank')}>
+                Open Graph API Explorer ↗
+              </span>
+            </div>
+            <div className="relative">
+              <input
+                type={showToken ? 'text' : 'password'}
+                value={pageAccessToken}
+                onChange={(e) => setPageAccessToken(e.target.value)}
+                placeholder="EAABw... (Paste your 60-day or Permanent Page Access Token here)"
+                className={`w-full px-3 py-2 pr-10 text-xs font-mono rounded-lg border outline-none ${
+                  isDarkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-slate-50 border-slate-200'
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken(!showToken)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {showToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Required for live sending. Must include permissions: <code className="font-mono text-[10px] bg-slate-100 dark:bg-neutral-800 px-1 py-0.5 rounded">pages_messaging</code>, <code className="font-mono text-[10px] bg-slate-100 dark:bg-neutral-800 px-1 py-0.5 rounded">instagram_manage_messages</code>.
+            </p>
+          </div>
+
+          {/* Page ID & Instagram Account ID */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block font-semibold mb-1 text-slate-700 dark:text-neutral-300">
+                Facebook Page ID
+              </label>
+              <input
+                type="text"
+                value={pageId}
+                onChange={(e) => setPageId(e.target.value)}
+                placeholder="e.g. 102938475610293"
+                className={`w-full px-3 py-2 text-xs font-mono rounded-lg border outline-none ${
+                  isDarkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-slate-50 border-slate-200'
+                }`}
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold mb-1 text-slate-700 dark:text-neutral-300">
+                Instagram Business Account ID
+              </label>
+              <input
+                type="text"
+                value={instagramAccountId}
+                onChange={(e) => setInstagramAccountId(e.target.value)}
+                placeholder="e.g. 17841400000000000"
+                className={`w-full px-3 py-2 text-xs font-mono rounded-lg border outline-none ${
+                  isDarkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-slate-50 border-slate-200'
+                }`}
+              />
+            </div>
+          </div>
+
+          {/* Webhook Token */}
+          <div>
+            <label className="block font-semibold mb-1 text-slate-700 dark:text-neutral-300">
+              Webhook Verify Token
+            </label>
+            <input
+              type="text"
+              value={webhookToken}
+              onChange={(e) => setWebhookToken(e.target.value)}
+              className={`w-full px-3 py-2 text-xs font-mono rounded-lg border outline-none ${
+                isDarkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-slate-50 border-slate-200'
+              }`}
+            />
+          </div>
+
+          {/* Meta API Test Result Card */}
+          {metaTestResult && (
+            <div className={`p-4 rounded-xl border text-xs ${
+              metaTestResult.success 
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200'
+                : 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-900 dark:text-red-200'
+            }`}>
+              <div className="flex items-start gap-2.5">
+                {metaTestResult.success ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                )}
+                <div className="space-y-2 flex-1">
+                  <span className="font-bold block">
+                    {metaTestResult.success ? 'Meta Graph API v22.0 Connected Successfully!' : 'Meta API Connection Failed'}
+                  </span>
+                  
+                  {metaTestResult.error && (
+                    <p className="text-red-800 dark:text-red-300 font-mono text-[11px] leading-relaxed">
+                      {metaTestResult.error}
+                    </p>
+                  )}
+
+                  {metaTestResult.guidance && (
+                    <p className="text-slate-600 dark:text-neutral-300 text-[11px] bg-white/60 dark:bg-black/20 p-2 rounded">
+                      💡 {metaTestResult.guidance}
+                    </p>
+                  )}
+
+                  {metaTestResult.account && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-emerald-200 dark:border-emerald-800/40 text-[11px]">
+                      <div>
+                        <span className="text-slate-500 dark:text-neutral-400">Account Identity:</span>{' '}
+                        <span className="font-semibold">{metaTestResult.account.name}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 dark:text-neutral-400">Managed Pages Found:</span>{' '}
+                        <span className="font-semibold">{metaTestResult.account.pagesCount || 1} Page(s)</span>
+                      </div>
+                      {metaTestResult.tokenDetails?.expiresAt && (
+                        <div>
+                          <span className="text-slate-500 dark:text-neutral-400">Token Expiration:</span>{' '}
+                          <span className="font-semibold">{metaTestResult.tokenDetails.expiresAt}</span>
+                        </div>
+                      )}
+                      {metaTestResult.tokenDetails?.scopes && (
+                        <div className="col-span-full">
+                          <span className="text-slate-500 dark:text-neutral-400">Granted Scopes:</span>{' '}
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {metaTestResult.tokenDetails.scopes.map((s: string) => (
+                              <span key={s} className="px-1.5 py-0.5 bg-emerald-200/70 dark:bg-emerald-900/60 rounded text-[10px] font-mono">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons for Meta API */}
+          <div className="pt-3 border-t border-inherit flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={handleTestMetaApi}
+              disabled={testingMeta}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-neutral-700 hover:bg-slate-100 dark:hover:bg-neutral-800 font-semibold text-slate-700 dark:text-neutral-200 transition-colors text-xs"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${testingMeta ? 'animate-spin' : ''}`} />
+              <span>{testingMeta ? 'Testing Meta API...' : 'Test Meta API Connection'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSaveMetaSettings}
+              disabled={savingMeta}
+              className="flex items-center gap-2 px-5 py-2 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors"
+            >
+              {savingMeta ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+              <span>Save Configuration to Database</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Firebase Database & Cloud Storage Card */}
@@ -120,11 +525,11 @@ export const SettingsView: React.FC = () => {
           <div className="flex items-center gap-2">
             <Database className="w-4 h-4 text-emerald-500" />
             <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-              Firebase Firestore Database & Authentication
+              Firebase Firestore Database & Persistence
             </h3>
           </div>
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-            Provisioned & Secure
+            Database Linked
           </span>
         </div>
 
@@ -162,8 +567,8 @@ export const SettingsView: React.FC = () => {
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-neutral-400">
                   {user 
-                    ? 'Changes to campaigns, posts, and media are actively persisted to Firestore' 
-                    : 'Sign in to automatically sync local campaigns and posts across team devices'}
+                    ? 'All Meta API settings, campaigns, posts, and suppression records are synced to Firestore' 
+                    : 'Sign in to ensure settings and campaigns automatically synchronize across all team members'}
                 </p>
               </div>
             </div>
@@ -320,107 +725,6 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
-      <div className={`p-5 rounded-xl border ${
-        isDarkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200 shadow-xs'
-      }`}>
-        <div className="flex items-center justify-between pb-3 border-b border-inherit mb-3">
-          <div className="flex items-center gap-2">
-            <Radio className="w-4 h-4 text-indigo-500" />
-            <h3 className="font-bold text-sm text-slate-900 dark:text-white">Runtime Environment Mode</h3>
-          </div>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-            isDemoMode ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
-          }`}>
-            {isDemoMode ? 'Demo Sandbox' : 'Live Graph API v22.0'}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div 
-            onClick={() => setIsDemoMode(true)}
-            className={`p-4 rounded-xl border cursor-pointer transition-all ${
-              isDemoMode 
-                ? 'border-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/30 ring-1 ring-indigo-500' 
-                : isDarkMode ? 'border-neutral-800 hover:bg-neutral-800/40' : 'border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            <h4 className="font-bold text-xs text-slate-900 dark:text-white mb-1">Demo Mode (Default Sandbox)</h4>
-            <p className="text-xs text-slate-500 dark:text-neutral-400 leading-relaxed">
-              Safe demonstration environment with pre-populated Firm Expo accounts, realistic analytics, and instant publishing simulation. Does not require active Meta developer secrets.
-            </p>
-          </div>
-
-          <div 
-            onClick={() => setIsDemoMode(false)}
-            className={`p-4 rounded-xl border cursor-pointer transition-all ${
-              !isDemoMode 
-                ? 'border-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/30 ring-1 ring-indigo-500' 
-                : isDarkMode ? 'border-neutral-800 hover:bg-neutral-800/40' : 'border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            <h4 className="font-bold text-xs text-slate-900 dark:text-white mb-1">Live Meta Graph API Mode</h4>
-            <p className="text-xs text-slate-500 dark:text-neutral-400 leading-relaxed">
-              Direct connection to Meta Graph API v22.0 using your verified Meta Developer App ID and server-side secret tokens. Real posts will be sent to live Facebook Pages and Instagram accounts.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Meta Developer App Credentials */}
-      <div className={`p-5 rounded-xl border ${
-        isDarkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200 shadow-xs'
-      }`}>
-        <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-1">
-          Meta Developer App Configuration
-        </h3>
-        <p className="text-xs text-slate-500 dark:text-neutral-400 mb-4">
-          Obtain credentials from developers.facebook.com for your registered Firm Expo Business App
-        </p>
-
-        <div className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block font-semibold mb-1">Meta App ID (Client ID)</label>
-              <input
-                type="text"
-                value={appId}
-                onChange={(e) => setAppId(e.target.value)}
-                className={`w-full px-3 py-2 text-xs font-mono rounded-lg border outline-none ${
-                  isDarkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-slate-50 border-slate-200'
-                }`}
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold mb-1">Meta App Secret (Encrypted at rest)</label>
-              <div className="relative">
-                <input
-                  type="password"
-                  value={appSecret}
-                  onChange={(e) => setAppSecret(e.target.value)}
-                  className={`w-full px-3 py-2 text-xs font-mono rounded-lg border outline-none ${
-                    isDarkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-slate-50 border-slate-200'
-                  }`}
-                />
-                <Lock className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block font-semibold mb-1">Webhook Verify Token</label>
-            <input
-              type="text"
-              value={webhookToken}
-              onChange={(e) => setWebhookToken(e.target.value)}
-              className={`w-full px-3 py-2 text-xs font-mono rounded-lg border outline-none ${
-                isDarkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-slate-50 border-slate-200'
-              }`}
-            />
-          </div>
-        </div>
-      </div>
-
       {/* Meta Webhook & Callback Endpoints */}
       <div className={`p-5 rounded-xl border ${
         isDarkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200 shadow-xs'
@@ -457,13 +761,13 @@ export const SettingsView: React.FC = () => {
             <div className="flex items-center gap-2 mt-1">
               <input
                 readOnly
-                value="https://firmexpo.com/api/meta/webhooks"
+                value="https://firmexpo.com/api/webhooks/meta"
                 className={`flex-1 px-3 py-1.5 font-mono text-[11px] rounded-lg border ${
                   isDarkMode ? 'bg-neutral-800 border-neutral-700 text-neutral-300' : 'bg-slate-100 border-slate-200 text-slate-700'
                 }`}
               />
               <button
-                onClick={() => copyToClipboard('https://firmexpo.com/api/meta/webhooks', 'Webhooks URL')}
+                onClick={() => copyToClipboard('https://firmexpo.com/api/webhooks/meta', 'Webhooks URL')}
                 className="px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-neutral-700 hover:bg-slate-100 dark:hover:bg-neutral-800 font-semibold"
               >
                 {copiedField === 'Webhooks URL' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -489,15 +793,6 @@ export const SettingsView: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
-
-        <div className="pt-5 mt-5 border-t border-inherit flex items-center justify-end">
-          <button
-            onClick={handleSaveSettings}
-            className="px-5 py-2 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors"
-          >
-            Save Configuration
-          </button>
         </div>
       </div>
     </div>
