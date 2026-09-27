@@ -16,7 +16,9 @@ import {
   CalendarDays,
   ExternalLink,
   RefreshCw,
-  Plus
+  Plus,
+  Trash2,
+  Sparkles
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { OVERVIEW_METRICS } from '../../data/mockData';
@@ -29,12 +31,28 @@ export const OverviewView: React.FC = () => {
     posts, 
     setCurrentTab, 
     socialAccounts,
-    currentWorkspace 
+    currentWorkspace,
+    metaConfig,
+    syncLiveMetaAccounts,
+    clearAllDummyData
   } = useApp();
 
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d'>('30d');
   const [platformFilter, setPlatformFilter] = useState<'all' | 'instagram' | 'facebook'>('all');
   const [hoveredDataPoint, setHoveredDataPoint] = useState<number | null>(null);
+  const [syncingMeta, setSyncingMeta] = useState(false);
+
+  const hasDummyData = campaigns.some(c => c.id.startsWith('cmp-')) || socialAccounts.some(a => a.id.startsWith('acc-ig-') || a.id.startsWith('acc-fb-'));
+  const hasRealToken = Boolean(metaConfig.pageAccessToken && metaConfig.pageAccessToken.trim().length > 10);
+
+  const handleSyncRealData = async () => {
+    setSyncingMeta(true);
+    try {
+      await syncLiveMetaAccounts();
+    } finally {
+      setSyncingMeta(false);
+    }
+  };
 
   // Dynamic calculations based on state
   const activeCampaignsCount = campaigns.filter(c => c.status === 'published' || c.status === 'publishing').length;
@@ -80,6 +98,40 @@ export const OverviewView: React.FC = () => {
           >
             Configure Meta App
           </button>
+        </div>
+      )}
+
+      {/* Live Meta Token Sync Notice Banner */}
+      {!isDemoMode && hasRealToken && hasDummyData && (
+        <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+          isDarkMode ? 'bg-indigo-950/30 border-indigo-800/60 text-indigo-200' : 'bg-indigo-50 border-indigo-200 text-indigo-900'
+        }`}>
+          <div className="flex items-start gap-3">
+            <Sparkles className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+            <div className="text-xs">
+              <span className="font-bold">Real Meta Credentials Active</span>
+              <p className="mt-0.5 leading-relaxed text-slate-600 dark:text-neutral-300">
+                You have updated your real Meta tokens! Click <span className="font-bold text-indigo-600 dark:text-indigo-400">"Sync My Live Accounts"</span> to pull your real Facebook Pages and Instagram profiles, or <span className="font-bold text-red-600 dark:text-red-400">"Clear Dummy Data"</span> to clean out sample campaigns.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleSyncRealData}
+              disabled={syncingMeta}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncingMeta ? 'animate-spin' : ''}`} />
+              <span>{syncingMeta ? 'Syncing...' : 'Sync My Live Accounts'}</span>
+            </button>
+            <button
+              onClick={clearAllDummyData}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear Dummy Data</span>
+            </button>
+          </div>
         </div>
       )}
 

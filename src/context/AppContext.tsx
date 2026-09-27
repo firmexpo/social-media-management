@@ -104,6 +104,8 @@ interface AppContextType {
   metaConfig: MetaApiConfig;
   updateMetaConfig: (partial: Partial<MetaApiConfig>) => Promise<void>;
   disableTestModeInDatabase: () => Promise<void>;
+  syncLiveMetaAccounts: (token?: string) => Promise<boolean>;
+  clearAllDummyData: () => void;
 
   // Firebase Auth & Cloud Sync
   user: User | null;
@@ -447,6 +449,102 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await updateMetaConfig({ isDemoMode: false });
     showToast('Test mode disabled and saved to database! Live Meta Graph API active.', 'success');
   };
+
+  // Synchronize Real Live Meta Accounts (Facebook Pages and Instagram accounts)
+  const syncLiveMetaAccounts = async (tokenOverride?: string): Promise<boolean> => {
+    const effectiveToken = tokenOverride || metaConfig.pageAccessToken;
+    if (!effectiveToken) {
+      showToast('Please enter your Meta Page Access Token in Settings before syncing', 'error');
+      return false;
+    }
+
+    try {
+      showToast('Connecting to Meta Graph API v22.0 to fetch your live accounts...', 'info');
+      const response = await fetch('/api/meta/sync-live-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: effectiveToken,
+          pageId: metaConfig.pageId,
+          instagramAccountId: metaConfig.instagramAccountId
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success && Array.isArray(data.accounts) && data.accounts.length > 0) {
+        // REPLACE socialAccounts with REAL LIVE ACCOUNTS, purging the dummy ones!
+        setSocialAccounts(data.accounts);
+        localStorage.setItem('firmexpo_accounts', JSON.stringify(data.accounts));
+
+        // Save each real account to Firestore if user logged in
+        if (user) {
+          for (const acc of data.accounts) {
+            try {
+              await setDoc(doc(db, 'socialAccounts', acc.id), cleanForFirestore({
+                ...acc,
+                ownerId: user.uid
+              }), { merge: true });
+            } catch {}
+          }
+        }
+
+        showToast(`Success! Replaced dummy accounts with ${data.accounts.length} live Meta account(s): ${data.accounts.map((a: any) => a.name).join(', ')}`, 'success');
+        return true;
+      } else {
+        const errorMsg = data.error || 'No connected Facebook Pages or Instagram accounts found for this token.';
+        showToast(errorMsg, 'error');
+        return false;
+      }
+    } catch (err: any) {
+      showToast(`Error connecting to Meta: ${err.message}`, 'error');
+      return false;
+    }
+  };
+
+  // Clear all dummy/sample data across the entire platform
+  const clearAllDummyData = () => {
+    // 1. Purge dummy campaigns & posts
+    setCampaigns([]);
+    localStorage.setItem('firmexpo_campaigns', JSON.stringify([]));
+
+    setPosts([]);
+    localStorage.setItem('firmexpo_posts', JSON.stringify([]));
+
+    // 2. Purge dummy DM campaigns & contacts
+    setDMCampaigns([]);
+    localStorage.setItem('firmexpo_dm_campaigns', JSON.stringify([]));
+
+    setEligibleContacts([]);
+    localStorage.setItem('firmexpo_dm_contacts', JSON.stringify([]));
+
+    setScheduledMessages([]);
+    localStorage.setItem('firmexpo_dm_scheduled', JSON.stringify([]));
+
+    setConversations([]);
+    localStorage.setItem('firmexpo_inbox', JSON.stringify([]));
+
+    setResearchAccounts([]);
+    localStorage.setItem('firmexpo_dm_research', JSON.stringify([]));
+
+    // 3. Purge dummy social accounts if they contain mock prefix
+    setSocialAccounts(prev => {
+      const realOnly = prev.filter(a => !a.id.startsWith('acc-ig-') && !a.id.startsWith('acc-fb-'));
+      localStorage.setItem('firmexpo_accounts', JSON.stringify(realOnly));
+      return realOnly;
+    });
+
+    showToast('All sample & dummy items cleared! Your workspace is now pure live data.', 'success');
+  };
+
+  // Auto-sync real Meta accounts if token is configured but only dummy accounts exist
+  useEffect(() => {
+    if (metaConfig.pageAccessToken && metaConfig.pageAccessToken.trim().length > 10) {
+      const hasOnlyDummy = socialAccounts.length === 0 || socialAccounts.every(a => a.id.startsWith('acc-ig-') || a.id.startsWith('acc-fb-'));
+      if (hasOnlyDummy) {
+        syncLiveMetaAccounts(metaConfig.pageAccessToken);
+      }
+    }
+  }, [metaConfig.pageAccessToken]);
 
   // Save to localStorage
   useEffect(() => {
@@ -893,6 +991,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         metaConfig,
         updateMetaConfig,
         disableTestModeInDatabase,
+        syncLiveMetaAccounts,
+        clearAllDummyData,
         user,
         isAuthReady,
         isSyncing,

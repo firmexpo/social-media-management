@@ -23,7 +23,8 @@ import {
   Eye,
   EyeOff,
   Zap,
-  Info
+  Info,
+  Trash2
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { testConnection } from '../../lib/firebase';
@@ -36,6 +37,8 @@ export const SettingsView: React.FC = () => {
     metaConfig,
     updateMetaConfig,
     disableTestModeInDatabase,
+    syncLiveMetaAccounts,
+    clearAllDummyData,
     isDarkMode, 
     showToast, 
     user, 
@@ -200,6 +203,12 @@ export const SettingsView: React.FC = () => {
         isDemoMode: false, // Ensure live mode is saved
         status: metaTestResult?.success ? 'connected' : (metaConfig.status || 'untested')
       });
+
+      // Automatically sync real accounts from Meta if token is present
+      if (pageAccessToken.trim().length > 10) {
+        await syncLiveMetaAccounts(pageAccessToken.trim());
+      }
+
       showToast('Meta Graph API configuration saved to Firestore database! Test mode is disabled.', 'success');
     } catch (err: any) {
       showToast('Error saving settings to database', 'error');
@@ -494,15 +503,37 @@ export const SettingsView: React.FC = () => {
 
           {/* Action Buttons for Meta API */}
           <div className="pt-3 border-t border-inherit flex flex-wrap items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={handleTestMetaApi}
-              disabled={testingMeta}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-neutral-700 hover:bg-slate-100 dark:hover:bg-neutral-800 font-semibold text-slate-700 dark:text-neutral-200 transition-colors text-xs"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${testingMeta ? 'animate-spin' : ''}`} />
-              <span>{testingMeta ? 'Testing Meta API...' : 'Test Meta API Connection'}</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestMetaApi}
+                disabled={testingMeta}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-300 dark:border-neutral-700 hover:bg-slate-100 dark:hover:bg-neutral-800 font-semibold text-slate-700 dark:text-neutral-200 transition-colors text-xs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${testingMeta ? 'animate-spin' : ''}`} />
+                <span>{testingMeta ? 'Testing Meta API...' : 'Test Meta API Connection'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => syncLiveMetaAccounts(pageAccessToken)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 font-semibold transition-colors text-xs"
+                title="Fetch live Facebook Pages and Instagram profiles from Meta Graph API"
+              >
+                <Zap className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Sync Live Meta Accounts</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={clearAllDummyData}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 font-semibold transition-colors text-xs"
+                title="Purge mock and sample data from the workspace"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Clear Dummy Data</span>
+              </button>
+            </div>
 
             <button
               type="button"
@@ -511,7 +542,7 @@ export const SettingsView: React.FC = () => {
               className="flex items-center gap-2 px-5 py-2 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors"
             >
               {savingMeta ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-              <span>Save Configuration to Database</span>
+              <span>Save Configuration & Sync Live</span>
             </button>
           </div>
         </div>

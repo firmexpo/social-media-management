@@ -8,11 +8,12 @@ import {
   ExternalLink, 
   ShieldCheck, 
   Radio, 
-  X,
-  KeyRound,
-  Info,
-  Layers,
-  Sparkles
+  X, 
+  KeyRound, 
+  Info, 
+  Layers, 
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { SocialAccount } from '../../types';
@@ -26,6 +27,9 @@ export const SocialAccountsView: React.FC = () => {
     reauthorizeAccount, 
     isDarkMode, 
     isDemoMode,
+    metaConfig,
+    syncLiveMetaAccounts,
+    clearAllDummyData,
     showToast 
   } = useApp();
 
@@ -35,6 +39,19 @@ export const SocialAccountsView: React.FC = () => {
   const [newUsername, setNewUsername] = useState('');
   const [newPageId, setNewPageId] = useState('');
   const [newPageToken, setNewPageToken] = useState('');
+  const [syncingLive, setSyncingLive] = useState(false);
+
+  const hasDummyAccounts = socialAccounts.some(a => a.id.startsWith('acc-ig-') || a.id.startsWith('acc-fb-'));
+  const hasRealToken = Boolean(metaConfig.pageAccessToken && metaConfig.pageAccessToken.trim().length > 10);
+
+  const handleSyncFromMeta = async () => {
+    setSyncingLive(true);
+    try {
+      await syncLiveMetaAccounts();
+    } finally {
+      setSyncingLive(false);
+    }
+  };
 
   const handleSimulateOAuth = (platform: 'facebook' | 'instagram') => {
     setSelectedPlatformToConnect(platform);
@@ -78,11 +95,30 @@ export const SocialAccountsView: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <button
+            onClick={handleSyncFromMeta}
+            disabled={syncingLive}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-colors"
+            title="Fetch real Facebook Pages and Instagram accounts using your configured Meta token"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncingLive ? 'animate-spin' : ''}`} />
+            <span>{syncingLive ? 'Syncing Meta...' : 'Sync Live Accounts from Meta'}</span>
+          </button>
+
+          <button
+            onClick={clearAllDummyData}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-100 hover:bg-red-200 dark:bg-red-950/60 dark:hover:bg-red-900/60 rounded-lg transition-colors"
+            title="Purge all sample/dummy mock data across the platform"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Clear Dummy Data</span>
+          </button>
+
+          <button
             onClick={() => handleSimulateOAuth('facebook')}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Connect Facebook Page</span>
+            <span>Add Facebook Page</span>
           </button>
 
           <button
@@ -90,10 +126,44 @@ export const SocialAccountsView: React.FC = () => {
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-pink-600 hover:bg-pink-700 rounded-lg shadow-xs transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Connect Instagram Pro</span>
+            <span>Add Instagram Pro</span>
           </button>
         </div>
       </div>
+
+      {/* Real Meta Data Notification Banner */}
+      {hasDummyAccounts && (
+        <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+          isDarkMode ? 'bg-indigo-950/30 border-indigo-800/60 text-indigo-200' : 'bg-indigo-50 border-indigo-200 text-indigo-900'
+        }`}>
+          <div className="flex items-start gap-3">
+            <Sparkles className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+            <div className="text-xs">
+              <span className="font-bold">Real Meta Token Configured</span>
+              <p className="mt-0.5 leading-relaxed text-slate-600 dark:text-neutral-300">
+                You have entered live Meta credentials. Click <span className="font-bold text-indigo-600 dark:text-indigo-400">"Sync Live Accounts from Meta"</span> to pull your real Facebook Pages and Instagram Business accounts, or <span className="font-bold text-red-600 dark:text-red-400">"Clear Dummy Data"</span> to remove all mock accounts and sample campaigns.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleSyncFromMeta}
+              disabled={syncingLive}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncingLive ? 'animate-spin' : ''}`} />
+              <span>Sync Now</span>
+            </button>
+            <button
+              onClick={clearAllDummyData}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Purge Mock Data</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Meta Token Status Advisory */}
       <div className={`p-4 rounded-xl border flex items-start gap-3.5 ${
